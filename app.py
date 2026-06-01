@@ -437,21 +437,25 @@ else:
                         qty_choice = st.number_input("Qty", min_value=1, key=f"qty_{s_row['id']}")
                         price = s_row['price_retail'] if unit_choice == "Retail" else (s_row['price_pack'] if unit_choice == "Pack" else s_row['price_carton'])
                         total_calc = price * qty_choice
-                        if st.button(f"🛒 Order - ₦{total_calc:,.2f}", key=f"btn_{s_row['id']}"):
-                            st.warning("Final Step: Enter your details below to confirm.")
-                            with st.form(f"confirm_{s_row['id']}"):
-                                c_phone = st.text_input("Phone Number")
-                                c_name = st.text_input("Name")
-                                if st.form_submit_button("Confirm Order"):
-                                    order_payload = {
-                                        "customer": c_name, "item": f"{s_row['name']} ({unit_choice})", "qty": int(qty_choice),
-                                        "status": "Order Placed", "contact_phone": c_phone, "total_price": float(total_calc),
-                                        "date": date.today().isoformat(), "timestamp": get_now()
-                                    }
-                                    supabase.table("orders").insert(order_payload).execute()
-                                    st.success(f"✅ Success! Your order for {s_row['name']} has been placed.")
+                        
+                        with st.expander(f"🛒 Order Now (₦{total_calc:,.2f})"):
+                            with st.form(f"confirm_form_{s_row['id']}", clear_on_submit=True):
+                                c_name = st.text_input("Your Full Name", key=f"name_in_{s_row['id']}")
+                                c_phone = st.text_input("Your Phone Number", key=f"phone_in_{s_row['id']}")
+                                
+                                if st.form_submit_button("Submit Final Order Request"):
+                                    if c_name and c_phone:
+                                        order_payload = {
+                                            "customer": c_name, "item": f"{s_row['name']} ({unit_choice})", "qty": int(qty_choice),
+                                            "status": "Order Placed", "contact_phone": c_phone, "total_price": float(total_calc),
+                                            "date": date.today().isoformat(), "timestamp": get_now()
+                                        }
+                                        try:
+                                            supabase.table("orders").insert(order_payload).execute()
+                                            st.success(f"✅ Success! Your order for {s_row['name']} has been placed.")
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Database error: {e}")
+                                    else:
+                                        st.error("Please fill in your Name and Phone Number!")
                     st.divider()
-        else:
-            st.warning("No products found.")
-
-st.sidebar.caption(f"Reks Ultimate Cloud v5.0 | {date.today().year}")
