@@ -237,7 +237,7 @@ if view_mode == "STAFF":
                 }
                 
                 if action == "Update Existing Item":
-                    supabase.table("products").update(prod_payload).eq("name", n_name).execute()
+                    supabase.table("products").update(prod_payload).eq("name", target).execute()
                 else:
                     supabase.table("products").insert(prod_payload).execute()
                     
