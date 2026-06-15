@@ -191,7 +191,7 @@ if view_mode == "STAFF":
                             st.warning(f"Debt logged for {c_name_pos}!")
                             st.rerun()
 
-    with tabs[2]:
+   with tabs[2]:
         st.header("📦 Stock & Warehouse Control")
         df_inv = fetch_dataframe("products")
         
@@ -208,6 +208,23 @@ if view_mode == "STAFF":
         else:
             curr_data = {"name":"","cost":0.0,"price_carton":0.0,"price_pack":0.0,"price_retail":0.0,"qty_cartons":0,"packs_per_carton":1,"units_per_pack":1,"shelf":"","expiry":str(date.today()),"description":"","img_data":None}
         
+        # --- NEW IMAGE COPIER / UPLOADER MECHANISM ---
+        st.write("📷 **Product Image (Upload or Paste)**")
+        img_tab1, img_tab2 = st.tabs(["📁 Upload File", "📋 Paste"])
+        chosen_image = None
+
+        with img_tab1:
+            n_file = st.file_uploader("Choose file", type=["png", "jpg", "jpeg"], label_visibility="collapsed")
+            if n_file: 
+                chosen_image = n_file
+
+        with img_tab2:
+            n_paste = st.paste_input("Click & paste here (Ctrl+V)", label_visibility="collapsed")
+            if n_paste:
+                chosen_image = n_paste
+                st.image(n_paste, caption="Pasted Preview", width=100)
+        # ---------------------------------------------
+
         with st.form("inventory_form"):
             ca, cb, cc = st.columns(3)
             with ca:
@@ -225,10 +242,11 @@ if view_mode == "STAFF":
             
             n_exp = st.date_input("Expiry Date", value=datetime.strptime(curr_data['expiry'], '%Y-%m-%d').date())
             n_desc = st.text_area("Product Description", value=curr_data['description'])
-            n_file = st.file_uploader("Upload Product Photo")
             
             if st.form_submit_button("💾 Save Product Data"):
-                img_encoded = get_image_base64(n_file) if n_file else curr_data['img_data']
+                # Dynamically switches based on whether you pasted or uploaded
+                img_encoded = get_image_base64(chosen_image) if chosen_image else curr_data['img_data']
+                
                 prod_payload = {
                     "name": n_name, "cost": float(n_cost), "price_carton": float(n_pc), "price_pack": float(n_pp),
                     "price_retail": float(n_pr), "qty_cartons": int(n_stock), "packs_per_carton": int(n_ppc),
@@ -254,7 +272,6 @@ if view_mode == "STAFF":
                     supabase.table("products").delete().eq("name", delete_target).execute()
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
-
     with tabs[3]:
         st.header("Order Log")
         df_order_list = fetch_dataframe("orders")
