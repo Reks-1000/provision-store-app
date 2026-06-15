@@ -272,6 +272,7 @@ if view_mode == "STAFF":
                     supabase.table("products").delete().eq("name", delete_target).execute()
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
+                    
     with tabs[3]:
         st.header("Order Log")
         df_order_list = fetch_dataframe("orders")
