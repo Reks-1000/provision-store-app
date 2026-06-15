@@ -244,7 +244,6 @@ with tabs[2]:
             n_desc = st.text_area("Product Description", value=curr_data['description'])
             
             if st.form_submit_button("💾 Save Product Data"):
-                # Dynamically switches based on whether you pasted or uploaded
                 img_encoded = get_image_base64(chosen_image) if chosen_image else curr_data['img_data']
                 
                 prod_payload = {
