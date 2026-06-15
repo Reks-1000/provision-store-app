@@ -190,7 +190,7 @@ if view_mode == "STAFF":
                                 
                             st.warning(f"Debt logged for {c_name_pos}!")
                             st.rerun()
-   with tabs[2]:
+  with tabs[2]:
         st.header("📦 Stock & Warehouse Control")
         df_inv = fetch_dataframe("products")
         
