@@ -192,85 +192,120 @@ if view_mode == "STAFF":
                             st.rerun()
  
 with tabs[2]:
+
         st.header("📦 Stock & Warehouse Control")
-        df_inv = fetch_dataframe("products")
+
+        df_inv = pd.read_sql_query("SELECT * FROM products", conn)
+
         
-        if not df_inv.empty:
-            st.dataframe(df_inv.drop(columns=['img_data']) if 'img_data' in df_inv.columns else df_inv, use_container_width=True, hide_index=True)
+
+        # Display table - Hide the long 'img_data' column for a cleaner phone view
+
+        st.dataframe(df_inv.drop(columns=['img_data']) if 'img_data' in df_inv.columns else df_inv, use_container_width=True)
+
         st.divider()
+
         
+
+        # --- PART 1: ADD OR UPDATE ---
+
         st.subheader("📝 Add / Update Item")
+
         action = st.radio("Action", ["Add New Item", "Update Existing Item"], horizontal=True)
+
         
+
         if action == "Update Existing Item" and not df_inv.empty:
+
             target = st.selectbox("Select Item to Update", df_inv['name'])
+
             curr_data = df_inv[df_inv['name'] == target].iloc[0]
+
         else:
+
             curr_data = {"name":"","cost":0.0,"price_carton":0.0,"price_pack":0.0,"price_retail":0.0,"qty_cartons":0,"packs_per_carton":1,"units_per_pack":1,"shelf":"","expiry":str(date.today()),"description":"","img_data":None}
+
         
-        # --- NEW IMAGE COPIER / UPLOADER MECHANISM ---
-        st.write("📷 **Product Image (Upload or Paste)**")
-        img_tab1, img_tab2 = st.tabs(["📁 Upload File", "📋 Paste"])
-        chosen_image = None
-
-        with img_tab1:
-            n_file = st.file_uploader("Choose file", type=["png", "jpg", "jpeg"], label_visibility="collapsed")
-            if n_file: 
-                chosen_image = n_file
-
-        with img_tab2:
-            n_paste = st.paste_input("Click & paste here (Ctrl+V)", label_visibility="collapsed")
-            if n_paste:
-                chosen_image = n_paste
-                st.image(n_paste, caption="Pasted Preview", width=100)
-        # ---------------------------------------------
 
         with st.form("inventory_form"):
+
             ca, cb, cc = st.columns(3)
+
             with ca:
+
                 n_name = st.text_input("Product Name", value=curr_data['name'])
+
                 n_cost = st.number_input("Cost per Carton", value=float(curr_data['cost']))
+
                 n_shelf = st.text_input("Shelf Location", value=curr_data['shelf'])
+
             with cb:
+
                 n_pc = st.number_input("Price/Carton", value=float(curr_data['price_carton']))
+
                 n_pp = st.number_input("Price/Pack", value=float(curr_data['price_pack']))
+
                 n_pr = st.number_input("Price/Retail", value=float(curr_data['price_retail']))
+
             with cc:
+
                 n_stock = st.number_input("Stock (Cartons)", value=int(curr_data['qty_cartons']))
+
                 n_ppc = st.number_input("Packs/Carton", value=int(curr_data['packs_per_carton']))
+
                 n_upp = st.number_input("Units/Pack", value=int(curr_data['units_per_pack']))
+
             
+
             n_exp = st.date_input("Expiry Date", value=datetime.strptime(curr_data['expiry'], '%Y-%m-%d').date())
+
             n_desc = st.text_area("Product Description", value=curr_data['description'])
+
+            n_file = st.file_uploader("Upload Product Photo")
+
             
+
             if st.form_submit_button("💾 Save Product Data"):
-                img_encoded = get_image_base64(chosen_image) if chosen_image else curr_data['img_data']
-                
-                prod_payload = {
-                    "name": n_name, "cost": float(n_cost), "price_carton": float(n_pc), "price_pack": float(n_pp),
-                    "price_retail": float(n_pr), "qty_cartons": int(n_stock), "packs_per_carton": int(n_ppc),
-                    "units_per_pack": int(n_upp), "shelf": n_shelf, "expiry": str(n_exp), "img_data": img_encoded,
-                    "description": n_desc, "timestamp": get_now()
-                }
-                
-                if action == "Update Existing Item":
-                    supabase.table("products").update(prod_payload).eq("name", target).execute()
-                else:
-                    supabase.table("products").insert(prod_payload).execute()
-                    
-                st.success("Cloud Inventory Updated!")
+
+                img_encoded = get_image_base64(n_file) if n_file else curr_data['img_data']
+
+                conn.execute("""INSERT OR REPLACE INTO products (name, cost, price_carton, price_pack, price_retail, qty_cartons, packs_per_carton, units_per_pack, shelf, expiry, img_data, description, timestamp) 
+
+                             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""", (n_name, n_cost, n_pc, n_pp, n_pr, n_stock, n_ppc, n_upp, n_shelf, str(n_exp), img_encoded, n_desc, get_now()))
+
+                conn.commit()
+
+                st.success("Inventory Updated!")
+
                 st.rerun()
 
+
+
+        # --- PART 2: DELETE PRODUCT (NEW FEATURE) ---
+
         st.divider()
+
         if not df_inv.empty:
+
             st.subheader("🗑️ Delete Unwanted Product")
+
             with st.expander("⚠️ Click here to delete a product permanently"):
+
                 delete_target = st.selectbox("Select Item to PERMANENTLY Delete", df_inv['name'], key="del_box")
+
                 st.error(f"Warning: Deleting '{delete_target}' cannot be undone!")
+
                 if st.button(f"Confirm Delete: {delete_target}"):
-                    supabase.table("products").delete().eq("name", delete_target).execute()
-                    st.success(f"'{delete_target}' has been removed.")
+
+                    conn.execute("DELETE FROM products WHERE name = ?", (delete_target,))
+
+                    conn.commit()
+
+                    st.success(f"'{delete_target}' has been removed from inventory.")
+
                     st.rerun()
+
+
                     
     with tabs[3]:
         st.header("Order Log")
