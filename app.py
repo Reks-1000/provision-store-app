@@ -208,11 +208,10 @@ if view_mode == "STAFF":
         else:
             curr_data = {"name":"","cost":0.0,"price_carton":0.0,"price_pack":0.0,"price_retail":0.0,"qty_cartons":0,"packs_per_carton":1,"units_per_pack":1,"shelf":"","expiry":str(date.today()),"description":"","img_data":None}
         
-        # --- SAFE DUAL IMAGE INPUT SECTION ---
-        st.write("📷 **Product Image Options**")
-        img_tab1, img_tab2 = st.tabs(["📁 Upload Local File", "🌐 Paste Image URL"])
+        # --- NEW CLIPBOARD PASTE BUTTON UPGRADE ---
+        st.write("📷 **Product Image Input**")
+        img_tab1, img_tab2 = st.tabs(["📁 Upload File", "📋 Paste from Clipboard"])
         chosen_image = None
-        pasted_url = ""
 
         with img_tab1:
             n_file = st.file_uploader("Choose file", type=["png", "jpg", "jpeg"], label_visibility="collapsed")
@@ -220,10 +219,21 @@ if view_mode == "STAFF":
                 chosen_image = n_file
 
         with img_tab2:
-            pasted_url = st.text_input("Paste web image URL here:", placeholder="https://example.com/image.jpg", label_visibility="collapsed")
-            if pasted_url:
-                st.image(pasted_url, caption="URL Preview", width=100)
-        # ------------------------------------
+            # Import component inline to prevent errors if not installed globally
+            from streamlit_paste_button import paste_image_button as pbutton
+            
+            st.caption("Copy an image from your device, then click the button below:")
+            paste_result = pbutton(
+                label="📋 Click here to Paste Image",
+                background_color="#2e7d32",
+                hover_background_color="#1b5e20",
+                errors="raise"
+            )
+            
+            if paste_result.image_data is not None:
+                chosen_image = paste_result.image_data
+                st.image(chosen_image, caption="Pasted Image Preview", width=120)
+        # ------------------------------------------
 
         with st.form("inventory_form"):
             ca, cb, cc = st.columns(3)
@@ -244,14 +254,7 @@ if view_mode == "STAFF":
             n_desc = st.text_area("Product Description", value=curr_data['description'])
             
             if st.form_submit_button("💾 Save Product Data"):
-                # Handle image encoding safely
-                if chosen_image:
-                    img_encoded = get_image_base64(chosen_image)
-                elif pasted_url:
-                    img_encoded = pasted_url  # Save the URL string directly if provided
-                else:
-                    img_encoded = curr_data['img_data']
-
+                img_encoded = get_image_base64(chosen_image) if chosen_image else curr_data['img_data']
                 prod_payload = {
                     "name": n_name, "cost": float(n_cost), "price_carton": float(n_pc), "price_pack": float(n_pp),
                     "price_retail": float(n_pr), "qty_cartons": int(n_stock), "packs_per_carton": int(n_ppc),
