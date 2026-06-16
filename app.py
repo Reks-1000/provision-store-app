@@ -34,9 +34,29 @@ def fetch_dataframe(table_name):
 # ==========================================
 # 2. CORE UTILITY FUNCTIONS
 # ==========================================
+from PIL import Image  # Make sure this import is here
+
 def get_image_base64(uploaded_file):
     if uploaded_file is not None:
-        return base64.b64encode(uploaded_file.read()).decode()
+        try:
+            # If it's already an Image object from the paste button
+            if isinstance(uploaded_file, Image.Image):
+                img = uploaded_file
+            else:
+                # If it's a file uploaded from your storage
+                img = Image.open(uploaded_file)
+                
+            # Convert color channels if image has transparency (pasted images often do)
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+                
+            # Compress and encode to string format for Supabase
+            buffered = BytesIO()
+            img.save(buffered, format="JPEG", quality=75)
+            return base64.b64encode(buffered.getvalue()).decode()
+        except Exception as e:
+            st.error(f"Image processing failed: {e}")
+            return None
     return None
 
 def display_image_base64(base64_str):
@@ -49,7 +69,6 @@ def display_image_base64(base64_str):
 
 def get_now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
 # ==========================================
 # 3. UI CONFIGURATION & AUTHENTICATION
 # ==========================================
