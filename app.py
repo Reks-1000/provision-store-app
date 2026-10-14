@@ -79,21 +79,34 @@ if not st.session_state.auth["logged_in"]:
     auth_mode = st.sidebar.selectbox("Choose Portal", ["🛍️ Customer Shop", "🔑 Staff/Admin Login"])
     if auth_mode == "🔑 Staff/Admin Login":
         with st.sidebar.form("login_form"):
-            user_input = st.text_input("Username")
-            pass_input = st.text_input("Password", type="password")
+            user_input = st.text_input("Username").strip()
+            pass_input = st.text_input("Password", type="password").strip()
             if st.form_submit_button("Login"):
-                try:
-                    res = supabase.table("workers").select("role").eq("name", user_input).eq("password", pass_input).execute()
-                    if res.data:
-                        st.session_state.auth = {"logged_in": True, "user": user_input, "role": res.data[0]['role']}
-                        st.rerun()
-                    else:
-                        st.error("Invalid Username or Password")
-                except Exception as e:
-                    st.error(f"Login system error: {e}")
+                if not user_input or not pass_input:
+                    st.error("Please enter both Username and Password.")
+                else:
+                    try:
+                        res = supabase.table("workers").select("role, name").eq("name", user_input).eq("password", pass_input).execute()
+                        if res.data and len(res.data) > 0:
+                            matched_user = res.data[0]
+                            st.session_state.auth = {
+                                "logged_in": True, 
+                                "user": matched_user['name'], 
+                                "role": matched_user['role']
+                            }
+                            st.success(f"Welcome back, {matched_user['name']}!")
+                            st.rerun()
+                        else:
+                            check_user = supabase.table("workers").select("name").eq("name", user_input).execute()
+                            if not check_user.data:
+                                st.error(f"User '{user_input}' does not exist in database.")
+                            else:
+                                st.error("Incorrect password.")
+                    except Exception as e:
+                        st.error(f"Login system error: {e}")
     view_mode = "CUSTOMER"
 else:
-    st.sidebar.success(f"Logged in: {st.session_state.auth['user']}")
+    st.sidebar.success(f"Logged in: {st.session_state.auth['user']} ({st.session_state.auth['role']})")
     if st.sidebar.button("Logout"):
         st.session_state.auth = {"logged_in": False, "user": None, "role": None}
         st.rerun()
@@ -482,7 +495,7 @@ else:
             except Exception:
                 pass
 
-    # FIXED CUSTOMER SHOPPING SECTION
+    # CUSTOMER SHOPPING SECTION
     with c_tab1:
         col_search1, col_search2 = st.columns([2, 1])
         with col_search1:
@@ -520,7 +533,7 @@ else:
                         price = s_row['price_retail'] if unit_choice == "Retail" else (s_row['price_pack'] if unit_choice == "Pack" else s_row['price_carton'])
                         total_calc = price * qty_choice
                         
-                        # POPOVER MODAL TO ELIMINATE FORM NESTING BUG
+                        # POPOVER MODAL TO ELIMINATE FORM NESTING
                         with st.popover(f"🛒 Order - ₦{total_calc:,.2f}"):
                             st.subheader(f"Confirm Order for {s_row['name']}")
                             with st.form(key=f"popover_form_{s_row['id']}"):
