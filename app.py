@@ -62,7 +62,7 @@ def display_image_base64(base64_str):
     return None
 
 def get_now():
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.strftime(datetime.now(), "%Y-%m-%d %H:%M:%S")
 
 # ==========================================
 # 3. UI CONFIGURATION & AUTHENTICATION
@@ -75,6 +75,14 @@ if 'auth' not in st.session_state:
 st.sidebar.title("🚀 Reks Pro Cloud Portal")
 st.sidebar.markdown("---")
 
+# DIAGNOSTIC CHECKER: Display what Streamlit actually reads from Supabase
+with st.sidebar.expander("🔍 Debug Supabase Connection"):
+    try:
+        debug_res = supabase.table("workers").select("*").execute()
+        st.write("Rows in `workers` table:", debug_res.data)
+    except Exception as dbg_err:
+        st.write("Error reading table:", dbg_err)
+
 if not st.session_state.auth["logged_in"]:
     auth_mode = st.sidebar.selectbox("Choose Portal", ["🛍️ Customer Shop", "🔑 Staff/Admin Login"])
     if auth_mode == "🔑 Staff/Admin Login":
@@ -86,7 +94,7 @@ if not st.session_state.auth["logged_in"]:
                     st.error("Please enter both Username and Password.")
                 else:
                     try:
-                        # Use ilike for case-insensitive username matching
+                        # Case-insensitive query using ilike
                         res = supabase.table("workers").select("role, name").ilike("name", user_input).eq("password", pass_input).execute()
                         if res.data and len(res.data) > 0:
                             matched_user = res.data[0]
