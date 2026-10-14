@@ -86,7 +86,8 @@ if not st.session_state.auth["logged_in"]:
                     st.error("Please enter both Username and Password.")
                 else:
                     try:
-                        res = supabase.table("workers").select("role, name").eq("name", user_input).eq("password", pass_input).execute()
+                        # Use ilike for case-insensitive username matching
+                        res = supabase.table("workers").select("role, name").ilike("name", user_input).eq("password", pass_input).execute()
                         if res.data and len(res.data) > 0:
                             matched_user = res.data[0]
                             st.session_state.auth = {
@@ -97,7 +98,7 @@ if not st.session_state.auth["logged_in"]:
                             st.success(f"Welcome back, {matched_user['name']}!")
                             st.rerun()
                         else:
-                            check_user = supabase.table("workers").select("name").eq("name", user_input).execute()
+                            check_user = supabase.table("workers").select("name").ilike("name", user_input).execute()
                             if not check_user.data:
                                 st.error(f"User '{user_input}' does not exist in database.")
                             else:
@@ -402,7 +403,7 @@ if view_mode == "STAFF":
             new_p = st.text_input("New Password", type="password")
             confirm_p = st.text_input("Confirm New Password", type="password")
             if st.form_submit_button("Update Password"):
-                verify = supabase.table("workers").select("*").eq("name", user_logged).eq("password", old_p).execute()
+                verify = supabase.table("workers").select("*").ilike("name", user_logged).eq("password", old_p).execute()
                 if not verify.data:
                     st.error("Current password is incorrect.")
                 elif new_p != confirm_p:
@@ -410,7 +411,7 @@ if view_mode == "STAFF":
                 elif len(new_p) < 4:
                     st.error("Password too short.")
                 else:
-                    supabase.table("workers").update({"password": new_p}).eq("name", user_logged).execute()
+                    supabase.table("workers").update({"password": new_p}).ilike("name", user_logged).execute()
                     st.success("Password updated securely in cloud database!")
 
     # CEO TABS
@@ -453,7 +454,7 @@ if view_mode == "STAFF":
                     target_worker = st.selectbox("Select Worker", df_workers['name']) if not df_workers.empty else st.selectbox("Select Worker", ["None"])
                     new_reset_p = st.text_input("New Temporary Password", type="password")
                     if st.form_submit_button("Reset Password"):
-                        supabase.table("workers").update({"password": new_reset_p}).eq("name", target_worker).execute()
+                        supabase.table("workers").update({"password": new_reset_p}).ilike("name", target_worker).execute()
                         st.success("Password reset successfully.")
 
 # ==========================================
