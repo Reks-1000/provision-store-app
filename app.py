@@ -21,6 +21,18 @@ except Exception as e:
     st.error(f"Database connection failed. Please verify Streamlit Cloud Secrets! Error: {e}")
     st.stop()
 
+# AUTO-INITIALIZE DEFAULT ADMIN USER IF TABLE IS EMPTY
+try:
+    check_empty = supabase.table("workers").select("*").execute()
+    if not check_empty.data:
+        supabase.table("workers").insert({
+            "name": "admin", 
+            "role": "CEO", 
+            "password": "1234"
+        }).execute()
+except Exception:
+    pass
+
 def fetch_dataframe(table_name):
     try:
         response = supabase.table(table_name).select("*").execute()
@@ -62,7 +74,7 @@ def display_image_base64(base64_str):
     return None
 
 def get_now():
-    return datetime.strftime(datetime.now(), "%Y-%m-%d %H:%M:%S")
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 # ==========================================
 # 3. UI CONFIGURATION & AUTHENTICATION
