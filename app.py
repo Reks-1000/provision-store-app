@@ -4,6 +4,7 @@ from supabase import create_client, Client
 from datetime import datetime, date
 import base64
 from io import BytesIO
+from PIL import Image
 
 # ==========================================
 # 1. DATABASE SYSTEM & INITIALIZATION (SUPABASE)
@@ -20,7 +21,6 @@ except Exception as e:
     st.error(f"Database connection failed. Please verify Streamlit Cloud Secrets! Error: {e}")
     st.stop()
 
-# Helper to fetch tables straight into Pandas dataframes (Replacing pd.read_sql_query)
 def fetch_dataframe(table_name):
     try:
         response = supabase.table(table_name).select("*").execute()
@@ -34,23 +34,17 @@ def fetch_dataframe(table_name):
 # ==========================================
 # 2. CORE UTILITY FUNCTIONS
 # ==========================================
-from PIL import Image  # Make sure this import is here
-
 def get_image_base64(uploaded_file):
     if uploaded_file is not None:
         try:
-            # If it's already an Image object from the paste button
             if isinstance(uploaded_file, Image.Image):
                 img = uploaded_file
             else:
-                # If it's a file uploaded from your storage
                 img = Image.open(uploaded_file)
                 
-            # Convert color channels if image has transparency (pasted images often do)
             if img.mode in ("RGBA", "P"):
                 img = img.convert("RGB")
                 
-            # Compress and encode to string format for Supabase
             buffered = BytesIO()
             img.save(buffered, format="JPEG", quality=75)
             return base64.b64encode(buffered.getvalue()).decode()
@@ -63,12 +57,13 @@ def display_image_base64(base64_str):
     if base64_str:
         try:
             return base64.b64decode(base64_str)
-        except:
+        except Exception:
             return None
     return None
 
 def get_now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
 # ==========================================
 # 3. UI CONFIGURATION & AUTHENTICATION
 # ==========================================
@@ -114,14 +109,15 @@ if view_mode == "STAFF":
     df_alert = fetch_dataframe("products")
     if not df_alert.empty:
         for _, row in df_alert.iterrows():
-            if row['qty_cartons'] <= 3:
+            if row.get('qty_cartons', 0) <= 3:
                 st.warning(f"⚠️ LOW STOCK: {row['name']} has only {row['qty_cartons']} left.")
-            if row['expiry'] and row['expiry'] not in ["None", "", "NoneType"]:
+            if row.get('expiry') and row['expiry'] not in ["None", "", "NoneType"]:
                 try:
                     exp_dt = datetime.strptime(row['expiry'], '%Y-%m-%d').date()
                     if exp_dt <= date.today():
-                        st.error(f"❌ EXPIRED: {row['name']} has reached its expiry date ({row['expiry']})!")
-                except: pass
+                        st.error(f"❌ EXPIRED: {row['name']} reached its expiry date ({row['expiry']})!")
+                except Exception:
+                    pass
 
     menu = ["📊 Dashboard", "🛒 POS & Sales", "📦 Inventory", "📋 Orders/Requests", "📓 Debtors", "⚙️ Settings"]
     if role == "CEO":
@@ -129,15 +125,16 @@ if view_mode == "STAFF":
     
     tabs = st.tabs(menu)
 
+    # TAB 0: DASHBOARD
     with tabs[0]:
         st.header("Business Analytics")
         df_s = fetch_dataframe("sales")
         df_e = fetch_dataframe("expenses")
         
         c1, c2, c3, c4 = st.columns(4)
-        total_rev = df_s['total'].sum() if not df_s.empty else 0
-        total_prof = df_s['profit'].sum() if not df_s.empty else 0
-        total_exp = df_e['amount'].sum() if not df_e.empty else 0
+        total_rev = df_s['total'].sum() if not df_s.empty and 'total' in df_s.columns else 0
+        total_prof = df_s['profit'].sum() if not df_s.empty and 'profit' in df_s.columns else 0
+        total_exp = df_e['amount'].sum() if not df_e.empty and 'amount' in df_e.columns else 0
         
         c1.metric("Total Revenue", f"₦{total_rev:,.2f}")
         c2.metric("Total Profit", f"₦{total_prof:,.2f}")
@@ -147,12 +144,13 @@ if view_mode == "STAFF":
         if not df_s.empty:
             st.dataframe(df_s.sort_values('timestamp', ascending=False), use_container_width=True, hide_index=True)
 
+    # TAB 1: POS & SALES
     with tabs[1]:
         st.header("New Sale Transaction")
         try:
             res_pos = supabase.table("products").select("*").gt("qty_cartons", 0).execute()
             df_p_pos = pd.DataFrame(res_pos.data) if res_pos.data else pd.DataFrame()
-        except:
+        except Exception:
             df_p_pos = pd.DataFrame()
             
         if not df_p_pos.empty:
@@ -172,9 +170,19 @@ if view_mode == "STAFF":
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
                     if st.button("🏁 Cash Sale", use_container_width=True):
-                        if sale_unit == "Carton": uc = p['cost']
-                        elif sale_unit == "Pack": uc = p['cost'] / p['packs_per_carton']
-                        else: uc = (p['cost'] / p['packs_per_carton']) / p['units_per_pack']
+                        packs_per_c = p.get('packs_per_carton', 1) or 1
+                        units_per_p = p.get('units_per_pack', 1) or 1
+                        
+                        if sale_unit == "Carton":
+                            uc = p['cost']
+                            cartons_deducted = sale_qty
+                        elif sale_unit == "Pack":
+                            uc = p['cost'] / packs_per_c
+                            cartons_deducted = sale_qty / packs_per_c
+                        else:
+                            uc = (p['cost'] / packs_per_c) / units_per_p
+                            cartons_deducted = sale_qty / (packs_per_c * units_per_p)
+                            
                         profit_final = grand_total - (uc * sale_qty)
                         
                         sale_data = {
@@ -184,9 +192,8 @@ if view_mode == "STAFF":
                         }
                         supabase.table("sales").insert(sale_data).execute()
                         
-                        if sale_unit == "Carton":
-                            new_qty = int(p['qty_cartons'] - sale_qty)
-                            supabase.table("products").update({"qty_cartons": new_qty}).eq("name", sel_item).execute()
+                        new_qty = float(p['qty_cartons'] - cartons_deducted)
+                        supabase.table("products").update({"qty_cartons": new_qty}).eq("name", sel_item).execute()
                             
                         st.success("Sale Recorded permanently!")
                         st.rerun()
@@ -203,19 +210,28 @@ if view_mode == "STAFF":
                             }
                             supabase.table("debtors").insert(debt_data).execute()
                             
+                            packs_per_c = p.get('packs_per_carton', 1) or 1
+                            units_per_p = p.get('units_per_pack', 1) or 1
                             if sale_unit == "Carton":
-                                new_qty = int(p['qty_cartons'] - sale_qty)
-                                supabase.table("products").update({"qty_cartons": new_qty}).eq("name", sel_item).execute()
+                                cartons_deducted = sale_qty
+                            elif sale_unit == "Pack":
+                                cartons_deducted = sale_qty / packs_per_c
+                            else:
+                                cartons_deducted = sale_qty / (packs_per_c * units_per_p)
+                                
+                            new_qty = float(p['qty_cartons'] - cartons_deducted)
+                            supabase.table("products").update({"qty_cartons": new_qty}).eq("name", sel_item).execute()
                                 
                             st.warning(f"Debt logged for {c_name_pos}!")
                             st.rerun()
 
+    # TAB 2: INVENTORY CONTROL
     with tabs[2]:
         st.header("📦 Stock & Warehouse Control")
         df_inv = fetch_dataframe("products")
         
         if not df_inv.empty:
-            st.dataframe(df_inv.drop(columns=['img_data']) if 'img_data' in df_inv.columns else df_inv, use_container_width=True, hide_index=True)
+            st.dataframe(df_inv.drop(columns=['img_data'], errors='ignore'), use_container_width=True, hide_index=True)
         st.divider()
         
         st.subheader("📝 Add / Update Item")
@@ -227,7 +243,6 @@ if view_mode == "STAFF":
         else:
             curr_data = {"name":"","cost":0.0,"price_carton":0.0,"price_pack":0.0,"price_retail":0.0,"qty_cartons":0,"packs_per_carton":1,"units_per_pack":1,"shelf":"","expiry":str(date.today()),"description":"","img_data":None}
         
-        # --- NEW CLIPBOARD PASTE BUTTON UPGRADE ---
         st.write("📷 **Product Image Input**")
         img_tab1, img_tab2 = st.tabs(["📁 Upload File", "📋 Paste from Clipboard"])
         chosen_image = None
@@ -238,45 +253,49 @@ if view_mode == "STAFF":
                 chosen_image = n_file
 
         with img_tab2:
-            # Import component inline to prevent errors if not installed globally
-            from streamlit_paste_button import paste_image_button as pbutton
-            
-            st.caption("Copy an image from your device, then click the button below:")
-            paste_result = pbutton(
-                label="📋 Click here to Paste Image",
-                background_color="#2e7d32",
-                hover_background_color="#1b5e20",
-                errors="raise"
-            )
-            
-            if paste_result.image_data is not None:
-                chosen_image = paste_result.image_data
-                st.image(chosen_image, caption="Pasted Image Preview", width=120)
-        # ------------------------------------------
+            try:
+                from streamlit_paste_button import paste_image_button as pbutton
+                st.caption("Copy an image from your device, then click the button below:")
+                paste_result = pbutton(
+                    label="📋 Click here to Paste Image",
+                    background_color="#2e7d32",
+                    hover_background_color="#1b5e20",
+                    errors="raise"
+                )
+                if paste_result.image_data is not None:
+                    chosen_image = paste_result.image_data
+                    st.image(chosen_image, caption="Pasted Image Preview", width=120)
+            except Exception as pe:
+                st.info("Paste from clipboard component not available.")
 
         with st.form("inventory_form"):
             ca, cb, cc = st.columns(3)
             with ca:
-                n_name = st.text_input("Product Name", value=curr_data['name'])
-                n_cost = st.number_input("Cost per Carton", value=float(curr_data['cost']))
-                n_shelf = st.text_input("Shelf Location", value=curr_data['shelf'])
+                n_name = st.text_input("Product Name", value=str(curr_data['name']))
+                n_cost = st.number_input("Cost per Carton", value=float(curr_data.get('cost', 0.0)))
+                n_shelf = st.text_input("Shelf Location", value=str(curr_data.get('shelf', '')))
             with cb:
-                n_pc = st.number_input("Price/Carton", value=float(curr_data['price_carton']))
-                n_pp = st.number_input("Price/Pack", value=float(curr_data['price_pack']))
-                n_pr = st.number_input("Price/Retail", value=float(curr_data['price_retail']))
+                n_pc = st.number_input("Price/Carton", value=float(curr_data.get('price_carton', 0.0)))
+                n_pp = st.number_input("Price/Pack", value=float(curr_data.get('price_pack', 0.0)))
+                n_pr = st.number_input("Price/Retail", value=float(curr_data.get('price_retail', 0.0)))
             with cc:
-                n_stock = st.number_input("Stock (Cartons)", value=int(curr_data['qty_cartons']))
-                n_ppc = st.number_input("Packs/Carton", value=int(curr_data['packs_per_carton']))
-                n_upp = st.number_input("Units/Pack", value=int(curr_data['units_per_pack']))
+                n_stock = st.number_input("Stock (Cartons)", value=float(curr_data.get('qty_cartons', 0)))
+                n_ppc = st.number_input("Packs/Carton", value=int(curr_data.get('packs_per_carton', 1)), min_value=1)
+                n_upp = st.number_input("Units/Pack", value=int(curr_data.get('units_per_pack', 1)), min_value=1)
             
-            n_exp = st.date_input("Expiry Date", value=datetime.strptime(curr_data['expiry'], '%Y-%m-%d').date())
-            n_desc = st.text_area("Product Description", value=curr_data['description'])
+            try:
+                default_exp = datetime.strptime(str(curr_data.get('expiry')), '%Y-%m-%d').date()
+            except Exception:
+                default_exp = date.today()
+
+            n_exp = st.date_input("Expiry Date", value=default_exp)
+            n_desc = st.text_area("Product Description", value=str(curr_data.get('description', '')))
             
             if st.form_submit_button("💾 Save Product Data"):
-                img_encoded = get_image_base64(chosen_image) if chosen_image else curr_data['img_data']
+                img_encoded = get_image_base64(chosen_image) if chosen_image else curr_data.get('img_data')
                 prod_payload = {
                     "name": n_name, "cost": float(n_cost), "price_carton": float(n_pc), "price_pack": float(n_pp),
-                    "price_retail": float(n_pr), "qty_cartons": int(n_stock), "packs_per_carton": int(n_ppc),
+                    "price_retail": float(n_pr), "qty_cartons": float(n_stock), "packs_per_carton": int(n_ppc),
                     "units_per_pack": int(n_upp), "shelf": n_shelf, "expiry": str(n_exp), "img_data": img_encoded,
                     "description": n_desc, "timestamp": get_now()
                 }
@@ -299,18 +318,21 @@ if view_mode == "STAFF":
                     supabase.table("products").delete().eq("name", delete_target).execute()
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
+
+    # TAB 3: ORDER LOG
     with tabs[3]:
         st.header("Order Log")
         df_order_list = fetch_dataframe("orders")
         if not df_order_list.empty:
             st.dataframe(df_order_list.sort_values('timestamp', ascending=False), use_container_width=True, hide_index=True)
         with st.expander("Update Status"):
-            ord_id = st.number_input("Order ID", min_value=1)
+            ord_id = st.number_input("Order ID", min_value=1, step=1)
             new_st = st.selectbox("Status", ["Pending", "In Progress", "Ready", "Delivered", "Cancelled"])
             if st.button("Update Status Now"):
                 supabase.table("orders").update({"status": new_st}).eq("id", ord_id).execute()
                 st.rerun()
 
+    # TAB 4: DEBTORS
     with tabs[4]:
         st.header("📓 Debtors Management")
         df_debtors = fetch_dataframe("debtors")
@@ -332,7 +354,7 @@ if view_mode == "STAFF":
                     new_amount = st.number_input("New Balance (₦)", value=float(debt_to_edit['amount']))
                     if st.form_submit_button("Update Balance"):
                         supabase.table("debtors").update({"amount": float(new_amount)}).eq("id", int(selected_id)).execute()
-                        st.success(f"Balance updated!")
+                        st.success("Balance updated!")
                         st.rerun()
             else:
                 if st.button(f"🗑️ Confirm: Clear all debt for {debt_to_edit['customer']}"):
@@ -355,8 +377,10 @@ if view_mode == "STAFF":
                     supabase.table("debtors").insert(debt_payload).execute()
                     st.success("New debt logged to cloud.")
                     st.rerun()
-                else: st.error("Name and Amount are required.")
+                else:
+                    st.error("Name and Amount are required.")
 
+    # TAB 5: SETTINGS
     with tabs[5]:
         st.header("⚙️ User Settings")
         st.subheader("Change Your Password")
@@ -376,6 +400,7 @@ if view_mode == "STAFF":
                     supabase.table("workers").update({"password": new_p}).eq("name", user_logged).execute()
                     st.success("Password updated securely in cloud database!")
 
+    # CEO TABS
     if role == "CEO":
         with tabs[6]:
             st.header("Expenditure Log")
@@ -383,7 +408,9 @@ if view_mode == "STAFF":
             if not df_exp_view.empty:
                 st.dataframe(df_exp_view, use_container_width=True, hide_index=True)
             with st.form("expense_entry"):
-                ex_cat, ex_val, ex_note = st.selectbox("Category", ["Salaries", "Rent", "Utility", "Stocking", "Fuel", "Other"]), st.number_input("Amount", 0.0), st.text_input("Note")
+                ex_cat = st.selectbox("Category", ["Salaries", "Rent", "Utility", "Stocking", "Fuel", "Other"])
+                ex_val = st.number_input("Amount", 0.0)
+                ex_note = st.text_input("Note")
                 if st.form_submit_button("Record Expense"):
                     exp_payload = {"category": ex_cat, "amount": float(ex_val), "note": ex_note, "date": date.today().isoformat(), "timestamp": get_now()}
                     supabase.table("expenses").insert(exp_payload).execute()
@@ -398,12 +425,15 @@ if view_mode == "STAFF":
             with col_w1:
                 st.subheader("Add New Worker")
                 with st.form("worker_add"):
-                    w_n, w_r, w_p = st.text_input("Worker Name"), st.selectbox("Role", ["Staff", "CEO"]), st.text_input("Set Password", type="password")
+                    w_n = st.text_input("Worker Name")
+                    w_r = st.selectbox("Role", ["Staff", "CEO"])
+                    w_p = st.text_input("Set Password", type="password")
                     if st.form_submit_button("Create Account"):
                         try:
                             supabase.table("workers").insert({"name": w_n, "role": w_r, "password": w_p}).execute()
                             st.rerun()
-                        except: st.error("Worker exists or entry error.")
+                        except Exception:
+                            st.error("Worker exists or entry error.")
             with col_w2:
                 st.subheader("Reset Worker Password")
                 with st.form("worker_reset"):
@@ -411,7 +441,7 @@ if view_mode == "STAFF":
                     new_reset_p = st.text_input("New Temporary Password", type="password")
                     if st.form_submit_button("Reset Password"):
                         supabase.table("workers").update({"password": new_reset_p}).eq("name", target_worker).execute()
-                        st.success(f"Password reset successfully.")
+                        st.success("Password reset successfully.")
 
 # ==========================================
 # 5. CUSTOMER PORTAL
@@ -431,23 +461,28 @@ else:
                 if cust_n and cust_i and cust_p:
                     order_payload = {
                         "customer": cust_n, "item": f"SPECIAL: {cust_i}", "qty": int(cust_q),
-                        "status": "Pending", "contact_phone": cust_p, "date": date.today().isoformat(), "timestamp": get_now()
+                        "status": "Pending", "contact_phone": cust_p, "total_price": 0.0,
+                        "date": date.today().isoformat(), "timestamp": get_now()
                     }
                     supabase.table("orders").insert(order_payload).execute()
                     st.success("✅ Request logged to database! We will contact you soon.")
-                else: st.error("Please fill all fields.")
+                else:
+                    st.error("Please fill all fields.")
 
     with c_tab3:
         st.subheader("Check your order status")
         track_phone = st.text_input("Enter the Phone Number used to order")
         if track_phone:
             try:
-                res_track = supabase.table("orders").select("item, qty, status, date").eq("contact_phone", track_phone).execute()
+                res_track = supabase.table("orders").select("item, qty, status, total_price, date").eq("contact_phone", track_phone).execute()
                 if res_track.data:
                     st.table(pd.DataFrame(res_track.data))
-                else: st.info("No orders found for this number.")
-            except: pass
+                else:
+                    st.info("No orders found for this number.")
+            except Exception:
+                pass
 
+    # FIXED CUSTOMER SHOPPING SECTION
     with c_tab1:
         col_search1, col_search2 = st.columns([2, 1])
         with col_search1:
@@ -458,7 +493,7 @@ else:
         try:
             res_shop = supabase.table("products").select("*").gt("qty_cartons", 0).execute()
             df_shop = pd.DataFrame(res_shop.data) if res_shop.data else pd.DataFrame()
-        except:
+        except Exception:
             df_shop = pd.DataFrame()
             
         if search_query and not df_shop.empty:
@@ -469,31 +504,50 @@ else:
                 with st.container():
                     col_img, col_info, col_order = st.columns([1, 2, 1.5])
                     with col_img:
-                        img_bytes = display_image_base64(s_row['img_data'])
-                        if img_bytes: st.image(img_bytes, width=150)
-                        else: st.info("No Image")
+                        img_bytes = display_image_base64(s_row.get('img_data'))
+                        if img_bytes:
+                            st.image(img_bytes, width=150)
+                        else:
+                            st.info("No Image")
                     with col_info:
                         st.subheader(s_row['name'])
-                        st.write(s_row['description'])
-                        st.caption(f"Location: {s_row['shelf']}")
+                        st.write(s_row.get('description', ''))
+                        st.caption(f"Location: {s_row.get('shelf', 'N/A')}")
                     with col_order:
                         unit_choice = st.selectbox("Select Unit", ["Retail", "Pack", "Carton"], key=f"unit_{s_row['id']}")
                         qty_choice = st.number_input("Qty", min_value=1, key=f"qty_{s_row['id']}")
+                        
                         price = s_row['price_retail'] if unit_choice == "Retail" else (s_row['price_pack'] if unit_choice == "Pack" else s_row['price_carton'])
                         total_calc = price * qty_choice
-                        if st.button(f"🛒 Order - ₦{total_calc:,.2f}", key=f"btn_{s_row['id']}"):
-                            st.warning("Final Step: Enter your details below to confirm.")
-                            with st.form(f"confirm_{s_row['id']}"):
+                        
+                        # POPOVER MODAL TO ELIMINATE FORM NESTING BUG
+                        with st.popover(f"🛒 Order - ₦{total_calc:,.2f}"):
+                            st.subheader(f"Confirm Order for {s_row['name']}")
+                            with st.form(key=f"popover_form_{s_row['id']}"):
+                                c_name = st.text_input("Full Name")
                                 c_phone = st.text_input("Phone Number")
-                                c_name = st.text_input("Name")
-                                if st.form_submit_button("Confirm Order"):
-                                    order_payload = {
-                                        "customer": c_name, "item": f"{s_row['name']} ({unit_choice})", "qty": int(qty_choice),
-                                        "status": "Order Placed", "contact_phone": c_phone, "total_price": float(total_calc),
-                                        "date": date.today().isoformat(), "timestamp": get_now()
-                                    }
-                                    supabase.table("orders").insert(order_payload).execute()
-                                    st.success(f"✅ Success! Your order for {s_row['name']} has been placed.")
+                                submit_order = st.form_submit_button("Confirm Order Now")
+                                
+                                if submit_order:
+                                    if c_name.strip() and c_phone.strip():
+                                        order_payload = {
+                                            "customer": c_name,
+                                            "item": f"{s_row['name']} ({unit_choice})",
+                                            "qty": int(qty_choice),
+                                            "status": "Order Placed",
+                                            "contact_phone": c_phone,
+                                            "total_price": float(total_calc),
+                                            "date": date.today().isoformat(),
+                                            "timestamp": get_now()
+                                        }
+                                        try:
+                                            supabase.table("orders").insert(order_payload).execute()
+                                            st.success(f"✅ Success! Your order for {s_row['name']} has been placed.")
+                                            st.rerun()
+                                        except Exception as err:
+                                            st.error(f"Order submission failed: {err}")
+                                    else:
+                                        st.error("Please enter both Name and Phone Number.")
                     st.divider()
         else:
             st.warning("No products found.")
