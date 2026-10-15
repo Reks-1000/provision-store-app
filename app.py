@@ -291,7 +291,7 @@ if view_mode == "STAFF":
                 if paste_result.image_data is not None:
                     chosen_image = paste_result.image_data
                     st.image(chosen_image, caption="Pasted Image Preview", width=120)
-            except Exception as pe:
+            except Exception:
                 st.info("Paste from clipboard component not available.")
 
         with st.form("inventory_form"):
@@ -322,21 +322,23 @@ if view_mode == "STAFF":
                     st.error("Product Name is required.")
                 else:
                     img_encoded = get_image_base64(chosen_image) if chosen_image else curr_data.get('img_data')
-                   prod_payload = {
-    "name": n_name, 
-    "cost": float(n_cost), 
-    "price_carton": float(n_pc), 
-    "price_pack": float(n_pp),
-    "price_retail": float(n_pr), 
-    "qty_cartons": int(n_stock),           # Cast to integer (5 instead of 5.0)
-    "packs_per_carton": int(n_ppc),       # Cast to integer
-    "units_per_pack": int(n_upp),         # Cast to integer
-    "shelf": n_shelf, 
-    "expiry": str(n_exp), 
-    "img_data": img_encoded,
-    "description": n_desc, 
-    "timestamp": get_now()
-}
+                    
+                    # Integer casting prevents PostgreSQL type mismatch errors (22P02)
+                    prod_payload = {
+                        "name": n_name,
+                        "cost": float(n_cost),
+                        "price_carton": float(n_pc),
+                        "price_pack": float(n_pp),
+                        "price_retail": float(n_pr),
+                        "qty_cartons": int(n_stock),
+                        "packs_per_carton": int(n_ppc),
+                        "units_per_pack": int(n_upp),
+                        "shelf": n_shelf,
+                        "expiry": str(n_exp),
+                        "img_data": img_encoded,
+                        "description": n_desc,
+                        "timestamp": get_now()
+                    }
                     
                     try:
                         if action == "Update Existing Item":
@@ -351,6 +353,17 @@ if view_mode == "STAFF":
                             st.error(f"A product named '{n_name}' already exists. Switch action to 'Update Existing Item' to edit it.")
                         else:
                             st.error(f"Database Save Error: {save_error}")
+
+        st.divider()
+        if not df_inv.empty:
+            st.subheader("🗑️ Delete Unwanted Product")
+            with st.expander("⚠️ Click here to delete a product permanently"):
+                delete_target = st.selectbox("Select Item to PERMANENTLY Delete", df_inv['name'], key="del_box")
+                st.error(f"Warning: Deleting '{delete_target}' cannot be undone!")
+                if st.button(f"Confirm Delete: {delete_target}"):
+                    supabase.table("products").delete().eq("name", delete_target).execute()
+                    st.success(f"'{delete_target}' has been removed.")
+                    st.rerun()
 
     # TAB 3: ORDER LOG
     with tabs[3]:
