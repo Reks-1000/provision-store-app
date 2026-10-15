@@ -73,6 +73,16 @@ def display_image_base64(base64_str):
             return None
     return None
 
+def get_file_base64(uploaded_file):
+    """Encodes direct MP4 video upload to base64 string for database storage"""
+    if uploaded_file is not None:
+        try:
+            return base64.b64encode(uploaded_file.read()).decode()
+        except Exception as e:
+            st.error(f"Video file processing failed: {e}")
+            return None
+    return None
+
 def get_now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -98,7 +108,6 @@ if not st.session_state.auth["logged_in"]:
                     st.error("Please enter both Username and Password.")
                 else:
                     try:
-                        # Case-insensitive query using ilike
                         res = supabase.table("workers").select("role, name").ilike("name", user_input).eq("password", pass_input).execute()
                         if res.data and len(res.data) > 0:
                             matched_user = res.data[0]
@@ -257,7 +266,7 @@ if view_mode == "STAFF":
         df_inv = fetch_dataframe("products")
         
         if not df_inv.empty:
-            st.dataframe(df_inv.drop(columns=['img_data'], errors='ignore'), use_container_width=True, hide_index=True)
+            st.dataframe(df_inv.drop(columns=['img_data', 'video_data'], errors='ignore'), use_container_width=True, hide_index=True)
         st.divider()
         
         st.subheader("📝 Add / Update Item")
@@ -267,14 +276,14 @@ if view_mode == "STAFF":
             target = st.selectbox("Select Item to Update", df_inv['name'])
             curr_data = df_inv[df_inv['name'] == target].iloc[0]
         else:
-            curr_data = {"name":"","cost":0.0,"price_carton":0.0,"price_pack":0.0,"price_retail":0.0,"qty_cartons":0,"packs_per_carton":1,"units_per_pack":1,"shelf":"","expiry":str(date.today()),"description":"","img_data":None,"video_url":""}
+            curr_data = {"name":"","cost":0.0,"price_carton":0.0,"price_pack":0.0,"price_retail":0.0,"qty_cartons":0,"packs_per_carton":1,"units_per_pack":1,"shelf":"","expiry":str(date.today()),"description":"","img_data":None,"video_url":"","video_data":None}
         
         st.write("📷 **Product Image Input**")
-        img_tab1, img_tab2 = st.tabs(["📁 Upload File", "📋 Paste from Clipboard"])
+        img_tab1, img_tab2 = st.tabs(["📁 Upload Image File", "📋 Paste from Clipboard"])
         chosen_image = None
 
         with img_tab1:
-            n_file = st.file_uploader("Choose file", type=["png", "jpg", "jpeg"], label_visibility="collapsed")
+            n_file = st.file_uploader("Choose image file", type=["png", "jpg", "jpeg"], label_visibility="collapsed")
             if n_file: 
                 chosen_image = n_file
 
@@ -293,6 +302,10 @@ if view_mode == "STAFF":
                     st.image(chosen_image, caption="Pasted Image Preview", width=120)
             except Exception:
                 st.info("Paste from clipboard component not available.")
+
+        st.divider()
+        st.write("🎥 **Product Video Advert Input**")
+        vid_file = st.file_uploader("Upload Direct MP4 Video File (Max 10MB)", type=["mp4", "mov", "webm"])
 
         with st.form("inventory_form"):
             ca, cb, cc = st.columns(3)
@@ -315,7 +328,7 @@ if view_mode == "STAFF":
                 default_exp = date.today()
 
             n_exp = st.date_input("Expiry Date", value=default_exp)
-            n_video = st.text_input("🎥 Video Advert Link (YouTube or MP4 URL)", value=str(curr_data.get('video_url', '') or ''))
+            n_video_url = st.text_input("OR Video Web Link (YouTube / Vimeo / Cloud Link)", value=str(curr_data.get('video_url', '') or ''))
             n_desc = st.text_area("Product Description", value=str(curr_data.get('description', '')))
             
             if st.form_submit_button("💾 Save Product Data"):
@@ -323,6 +336,7 @@ if view_mode == "STAFF":
                     st.error("Product Name is required.")
                 else:
                     img_encoded = get_image_base64(chosen_image) if chosen_image else curr_data.get('img_data')
+                    video_encoded = get_file_base64(vid_file) if vid_file else curr_data.get('video_data')
                     
                     prod_payload = {
                         "name": n_name,
@@ -336,7 +350,8 @@ if view_mode == "STAFF":
                         "shelf": n_shelf,
                         "expiry": str(n_exp),
                         "img_data": img_encoded,
-                        "video_url": n_video.strip(),
+                        "video_data": video_encoded,
+                        "video_url": n_video_url.strip(),
                         "description": n_desc,
                         "timestamp": get_now()
                     }
@@ -629,10 +644,17 @@ else:
                         st.write(s_row.get('description', ''))
                         st.caption(f"Location: {s_row.get('shelf', 'N/A')}")
                         
-                        # VIDEO ADVERT PLAYER IN CUSTOMER SHOP
-                        if s_row.get('video_url') and str(s_row['video_url']).strip() not in ["None", "", "nan"]:
-                            with st.expander("🎥 Watch Video Advert"):
-                                st.video(s_row['video_url'])
+                        # IN-APP DIRECT VIDEO ADVERT PLAYER
+                        has_direct_vid = s_row.get('video_data') and str(s_row['video_data']).strip() not in ["None", "", "nan"]
+                        has_url_vid = s_row.get('video_url') and str(s_row['video_url']).strip() not in ["None", "", "nan"]
+
+                        if has_direct_vid or has_url_vid:
+                            with st.expander("🎥 Watch Product Video Advert"):
+                                if has_direct_vid:
+                                    vid_bytes = base64.b64decode(s_row['video_data'])
+                                    st.video(vid_bytes)
+                                elif has_url_vid:
+                                    st.video(s_row['video_url'])
                                 
                     with col_order:
                         unit_choice = st.selectbox("Select Unit", ["Retail", "Pack", "Carton"], key=f"unit_{s_row['id']}")
