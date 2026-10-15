@@ -322,12 +322,21 @@ if view_mode == "STAFF":
                     st.error("Product Name is required.")
                 else:
                     img_encoded = get_image_base64(chosen_image) if chosen_image else curr_data.get('img_data')
-                    prod_payload = {
-                        "name": n_name, "cost": float(n_cost), "price_carton": float(n_pc), "price_pack": float(n_pp),
-                        "price_retail": float(n_pr), "qty_cartons": float(n_stock), "packs_per_carton": int(n_ppc),
-                        "units_per_pack": int(n_upp), "shelf": n_shelf, "expiry": str(n_exp), "img_data": img_encoded,
-                        "description": n_desc, "timestamp": get_now()
-                    }
+                   prod_payload = {
+    "name": n_name, 
+    "cost": float(n_cost), 
+    "price_carton": float(n_pc), 
+    "price_pack": float(n_pp),
+    "price_retail": float(n_pr), 
+    "qty_cartons": int(n_stock),           # Cast to integer (5 instead of 5.0)
+    "packs_per_carton": int(n_ppc),       # Cast to integer
+    "units_per_pack": int(n_upp),         # Cast to integer
+    "shelf": n_shelf, 
+    "expiry": str(n_exp), 
+    "img_data": img_encoded,
+    "description": n_desc, 
+    "timestamp": get_now()
+}
                     
                     try:
                         if action == "Update Existing Item":
