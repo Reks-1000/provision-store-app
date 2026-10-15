@@ -87,14 +87,6 @@ if 'auth' not in st.session_state:
 st.sidebar.title("🚀 Reks Pro Cloud Portal")
 st.sidebar.markdown("---")
 
-# DIAGNOSTIC CHECKER: Display what Streamlit actually reads from Supabase
-with st.sidebar.expander("🔍 Debug Supabase Connection"):
-    try:
-        debug_res = supabase.table("workers").select("*").execute()
-        st.write("Rows in `workers` table:", debug_res.data)
-    except Exception as dbg_err:
-        st.write("Error reading table:", dbg_err)
-
 if not st.session_state.auth["logged_in"]:
     auth_mode = st.sidebar.selectbox("Choose Portal", ["🛍️ Customer Shop", "🔑 Staff/Admin Login"])
     if auth_mode == "🔑 Staff/Admin Login":
