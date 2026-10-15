@@ -145,7 +145,7 @@ if view_mode == "STAFF":
                 except Exception:
                     pass
 
-    menu = ["📊 Dashboard", "🛒 POS & Sales", "📦 Inventory", "📋 Orders/Requests", "📓 Debtors", "⚙️ Settings"]
+    menu = ["📊 Dashboard", "🛒 POS & Sales", "📦 Inventory", "📋 Orders/Requests", "💬 Customer Chats", "📓 Debtors", "⚙️ Settings"]
     if role == "CEO":
         menu += ["💸 Expenses", "👥 Workers"]
     
@@ -358,8 +358,43 @@ if view_mode == "STAFF":
                 supabase.table("orders").update({"status": new_st}).eq("id", ord_id).execute()
                 st.rerun()
 
-    # TAB 4: DEBTORS
+    # TAB 4: CUSTOMER CHATS (STAFF SIDE)
     with tabs[4]:
+        st.header("💬 Live Customer Communication")
+        try:
+            res_msg = supabase.table("messages").select("customer_phone").execute()
+            if res_msg.data:
+                unique_phones = list(set([m['customer_phone'] for m in res_msg.data]))
+                selected_phone = st.selectbox("Select Customer Phone Number to Chat", unique_phones)
+                
+                if selected_phone:
+                    st.subheader(f"Chat History with {selected_phone}")
+                    chat_data = supabase.table("messages").select("*").eq("customer_phone", selected_phone).order("id").execute()
+                    
+                    for msg in chat_data.data:
+                        role_label = f"👤 {msg['sender']}" if msg['sender'] != "Customer" else "🛍️ Customer"
+                        st.markdown(f"**{role_label}** *({msg['timestamp']})*:\n> {msg['message']}")
+                    
+                    st.divider()
+                    with st.form("staff_reply_form", clear_on_submit=True):
+                        reply_text = st.text_input("Type your response to the customer...")
+                        if st.form_submit_button("📤 Send Reply"):
+                            if reply_text.strip():
+                                reply_payload = {
+                                    "sender": f"Staff ({user_logged})",
+                                    "customer_phone": selected_phone,
+                                    "message": reply_text.strip(),
+                                    "timestamp": get_now()
+                                }
+                                supabase.table("messages").insert(reply_payload).execute()
+                                st.rerun()
+            else:
+                st.info("No customer chat threads yet.")
+        except Exception as chat_e:
+            st.error(f"Chat portal error: {chat_e}")
+
+    # TAB 5: DEBTORS
+    with tabs[5]:
         st.header("📓 Debtors Management")
         df_debtors = fetch_dataframe("debtors")
         if not df_debtors.empty:
@@ -406,8 +441,8 @@ if view_mode == "STAFF":
                 else:
                     st.error("Name and Amount are required.")
 
-    # TAB 5: SETTINGS
-    with tabs[5]:
+    # TAB 6: SETTINGS
+    with tabs[6]:
         st.header("⚙️ User Settings")
         st.subheader("Change Your Password")
         with st.form("change_pass_form"):
@@ -428,7 +463,7 @@ if view_mode == "STAFF":
 
     # CEO TABS
     if role == "CEO":
-        with tabs[6]:
+        with tabs[7]:
             st.header("Expenditure Log")
             df_exp_view = fetch_dataframe("expenses")
             if not df_exp_view.empty:
@@ -442,7 +477,7 @@ if view_mode == "STAFF":
                     supabase.table("expenses").insert(exp_payload).execute()
                     st.rerun()
 
-        with tabs[7]:
+        with tabs[8]:
             st.header("Staff Management")
             df_workers = fetch_dataframe("workers")
             if not df_workers.empty:
@@ -474,7 +509,7 @@ if view_mode == "STAFF":
 # ==========================================
 else:
     st.title("🛒 Reks Customer Portal")
-    c_tab1, c_tab2, c_tab3 = st.tabs(["🛍️ Shop Now", "📝 Special Request", "🔍 Track My Order"])
+    c_tab1, c_tab2, c_tab3, c_tab4 = st.tabs(["🛍️ Shop Now", "📝 Special Request", "🔍 Track My Order", "💬 Chat with Us"])
     
     with c_tab2:
         st.subheader("Can't find what you need?")
@@ -507,6 +542,39 @@ else:
                     st.info("No orders found for this number.")
             except Exception:
                 pass
+
+    # TAB 4: CUSTOMER CHAT (CUSTOMER SIDE)
+    with c_tab4:
+        st.subheader("💬 Direct Support Chat")
+        c_phone_chat = st.text_input("Enter your Phone Number to start chatting", key="cust_chat_phone")
+        
+        if c_phone_chat.strip():
+            try:
+                chat_res = supabase.table("messages").select("*").eq("customer_phone", c_phone_chat.strip()).order("id").execute()
+                if chat_res.data:
+                    for m in chat_res.data:
+                        sender_tag = "🛍️ You" if m['sender'] == "Customer" else f"👤 {m['sender']}"
+                        st.markdown(f"**{sender_tag}** *({m['timestamp']})*:\n> {m['message']}")
+                else:
+                    st.info("No previous messages found. Send your first message below!")
+
+                st.divider()
+                with st.form("cust_msg_form", clear_on_submit=True):
+                    user_msg = st.text_input("Type your message here...")
+                    if st.form_submit_button("📤 Send Message"):
+                        if user_msg.strip():
+                            msg_payload = {
+                                "sender": "Customer",
+                                "customer_phone": c_phone_chat.strip(),
+                                "message": user_msg.strip(),
+                                "timestamp": get_now()
+                            }
+                            supabase.table("messages").insert(msg_payload).execute()
+                            st.rerun()
+            except Exception as e:
+                st.error(f"Chat connection error: {e}")
+        else:
+            st.warning("Please enter your phone number to load or start a chat thread.")
 
     # CUSTOMER SHOPPING SECTION
     with c_tab1:
