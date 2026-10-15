@@ -267,7 +267,7 @@ if view_mode == "STAFF":
             target = st.selectbox("Select Item to Update", df_inv['name'])
             curr_data = df_inv[df_inv['name'] == target].iloc[0]
         else:
-            curr_data = {"name":"","cost":0.0,"price_carton":0.0,"price_pack":0.0,"price_retail":0.0,"qty_cartons":0,"packs_per_carton":1,"units_per_pack":1,"shelf":"","expiry":str(date.today()),"description":"","img_data":None}
+            curr_data = {"name":"","cost":0.0,"price_carton":0.0,"price_pack":0.0,"price_retail":0.0,"qty_cartons":0,"packs_per_carton":1,"units_per_pack":1,"shelf":"","expiry":str(date.today()),"description":"","img_data":None,"video_url":""}
         
         st.write("📷 **Product Image Input**")
         img_tab1, img_tab2 = st.tabs(["📁 Upload File", "📋 Paste from Clipboard"])
@@ -315,6 +315,7 @@ if view_mode == "STAFF":
                 default_exp = date.today()
 
             n_exp = st.date_input("Expiry Date", value=default_exp)
+            n_video = st.text_input("🎥 Video Advert Link (YouTube or MP4 URL)", value=str(curr_data.get('video_url', '') or ''))
             n_desc = st.text_area("Product Description", value=str(curr_data.get('description', '')))
             
             if st.form_submit_button("💾 Save Product Data"):
@@ -323,7 +324,6 @@ if view_mode == "STAFF":
                 else:
                     img_encoded = get_image_base64(chosen_image) if chosen_image else curr_data.get('img_data')
                     
-                    # Integer casting prevents PostgreSQL type mismatch errors (22P02)
                     prod_payload = {
                         "name": n_name,
                         "cost": float(n_cost),
@@ -336,6 +336,7 @@ if view_mode == "STAFF":
                         "shelf": n_shelf,
                         "expiry": str(n_exp),
                         "img_data": img_encoded,
+                        "video_url": n_video.strip(),
                         "description": n_desc,
                         "timestamp": get_now()
                     }
@@ -627,6 +628,12 @@ else:
                         st.subheader(s_row['name'])
                         st.write(s_row.get('description', ''))
                         st.caption(f"Location: {s_row.get('shelf', 'N/A')}")
+                        
+                        # VIDEO ADVERT PLAYER IN CUSTOMER SHOP
+                        if s_row.get('video_url') and str(s_row['video_url']).strip() not in ["None", "", "nan"]:
+                            with st.expander("🎥 Watch Video Advert"):
+                                st.video(s_row['video_url'])
+                                
                     with col_order:
                         unit_choice = st.selectbox("Select Unit", ["Retail", "Pack", "Carton"], key=f"unit_{s_row['id']}")
                         qty_choice = st.number_input("Qty", min_value=1, key=f"qty_{s_row['id']}")
@@ -634,7 +641,7 @@ else:
                         price = s_row['price_retail'] if unit_choice == "Retail" else (s_row['price_pack'] if unit_choice == "Pack" else s_row['price_carton'])
                         total_calc = price * qty_choice
                         
-                        # POPOVER MODAL TO ELIMINATE FORM NESTING
+                        # POPOVER MODAL FOR PLACING ORDERS
                         with st.popover(f"🛒 Order - ₦{total_calc:,.2f}"):
                             st.subheader(f"Confirm Order for {s_row['name']}")
                             with st.form(key=f"popover_form_{s_row['id']}"):
