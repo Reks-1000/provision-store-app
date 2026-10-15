@@ -297,7 +297,7 @@ if view_mode == "STAFF":
         with st.form("inventory_form"):
             ca, cb, cc = st.columns(3)
             with ca:
-                n_name = st.text_input("Product Name", value=str(curr_data['name']))
+                n_name = st.text_input("Product Name", value=str(curr_data['name'])).strip()
                 n_cost = st.number_input("Cost per Carton", value=float(curr_data.get('cost', 0.0)))
                 n_shelf = st.text_input("Shelf Location", value=str(curr_data.get('shelf', '')))
             with cb:
@@ -318,32 +318,30 @@ if view_mode == "STAFF":
             n_desc = st.text_area("Product Description", value=str(curr_data.get('description', '')))
             
             if st.form_submit_button("💾 Save Product Data"):
-                img_encoded = get_image_base64(chosen_image) if chosen_image else curr_data.get('img_data')
-                prod_payload = {
-                    "name": n_name, "cost": float(n_cost), "price_carton": float(n_pc), "price_pack": float(n_pp),
-                    "price_retail": float(n_pr), "qty_cartons": float(n_stock), "packs_per_carton": int(n_ppc),
-                    "units_per_pack": int(n_upp), "shelf": n_shelf, "expiry": str(n_exp), "img_data": img_encoded,
-                    "description": n_desc, "timestamp": get_now()
-                }
-                
-                if action == "Update Existing Item":
-                    supabase.table("products").update(prod_payload).eq("name", target).execute()
+                if not n_name:
+                    st.error("Product Name is required.")
                 else:
-                    supabase.table("products").insert(prod_payload).execute()
+                    img_encoded = get_image_base64(chosen_image) if chosen_image else curr_data.get('img_data')
+                    prod_payload = {
+                        "name": n_name, "cost": float(n_cost), "price_carton": float(n_pc), "price_pack": float(n_pp),
+                        "price_retail": float(n_pr), "qty_cartons": float(n_stock), "packs_per_carton": int(n_ppc),
+                        "units_per_pack": int(n_upp), "shelf": n_shelf, "expiry": str(n_exp), "img_data": img_encoded,
+                        "description": n_desc, "timestamp": get_now()
+                    }
                     
-                st.success("Cloud Inventory Updated!")
-                st.rerun()
-
-        st.divider()
-        if not df_inv.empty:
-            st.subheader("🗑️ Delete Unwanted Product")
-            with st.expander("⚠️ Click here to delete a product permanently"):
-                delete_target = st.selectbox("Select Item to PERMANENTLY Delete", df_inv['name'], key="del_box")
-                st.error(f"Warning: Deleting '{delete_target}' cannot be undone!")
-                if st.button(f"Confirm Delete: {delete_target}"):
-                    supabase.table("products").delete().eq("name", delete_target).execute()
-                    st.success(f"'{delete_target}' has been removed.")
-                    st.rerun()
+                    try:
+                        if action == "Update Existing Item":
+                            supabase.table("products").update(prod_payload).eq("name", target).execute()
+                            st.success(f"Updated '{n_name}' successfully!")
+                        else:
+                            supabase.table("products").insert(prod_payload).execute()
+                            st.success(f"Added '{n_name}' to inventory!")
+                        st.rerun()
+                    except Exception as save_error:
+                        if "duplicate key value" in str(save_error) or "23505" in str(save_error):
+                            st.error(f"A product named '{n_name}' already exists. Switch action to 'Update Existing Item' to edit it.")
+                        else:
+                            st.error(f"Database Save Error: {save_error}")
 
     # TAB 3: ORDER LOG
     with tabs[3]:
