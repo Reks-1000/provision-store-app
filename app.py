@@ -74,7 +74,6 @@ def display_image_base64(base64_str):
     return None
 
 def get_file_base64(uploaded_file):
-    """Encodes direct MP4 video upload to base64 string for database storage"""
     if uploaded_file is not None:
         try:
             return base64.b64encode(uploaded_file.read()).decode()
@@ -335,24 +334,39 @@ if view_mode == "STAFF":
                 if not n_name:
                     st.error("Product Name is required.")
                 else:
+                    # Sanitize inputs to prevent NaN/Inf JSON errors
+                    def safe_float(val):
+                        try:
+                            f = float(val)
+                            return 0.0 if (pd.isna(f) or f != f) else f
+                        except Exception:
+                            return 0.0
+
+                    def safe_int(val):
+                        try:
+                            f = float(val)
+                            return 0 if (pd.isna(f) or f != f) else int(f)
+                        except Exception:
+                            return 0
+
                     img_encoded = get_image_base64(chosen_image) if chosen_image else curr_data.get('img_data')
                     video_encoded = get_file_base64(vid_file) if vid_file else curr_data.get('video_data')
                     
                     prod_payload = {
                         "name": n_name,
-                        "cost": float(n_cost),
-                        "price_carton": float(n_pc),
-                        "price_pack": float(n_pp),
-                        "price_retail": float(n_pr),
-                        "qty_cartons": int(n_stock),
-                        "packs_per_carton": int(n_ppc),
-                        "units_per_pack": int(n_upp),
-                        "shelf": n_shelf,
+                        "cost": safe_float(n_cost),
+                        "price_carton": safe_float(n_pc),
+                        "price_pack": safe_float(n_pp),
+                        "price_retail": safe_float(n_pr),
+                        "qty_cartons": safe_int(n_stock),
+                        "packs_per_carton": max(1, safe_int(n_ppc)),
+                        "units_per_pack": max(1, safe_int(n_upp)),
+                        "shelf": str(n_shelf).strip() if n_shelf else "",
                         "expiry": str(n_exp),
                         "img_data": img_encoded,
                         "video_data": video_encoded,
-                        "video_url": n_video_url.strip(),
-                        "description": n_desc,
+                        "video_url": str(n_video_url).strip() if n_video_url else "",
+                        "description": str(n_desc).strip() if n_desc else "",
                         "timestamp": get_now()
                     }
                     
