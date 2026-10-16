@@ -208,7 +208,6 @@ if view_mode == "STAFF":
                 sel_item = st.selectbox("Search & Select Item", df_p_pos['name'])
                 p = df_p_pos[df_p_pos['name'] == sel_item].iloc[0]
                 
-                # Dynamic unit labels from product record
                 m_label = p.get('unit_main_label', 'Carton') or 'Carton'
                 p_label = p.get('unit_pack_label', 'Pack') or 'Pack'
                 r_label = p.get('unit_retail_label', 'Retail Unit') or 'Retail Unit'
@@ -333,9 +332,8 @@ if view_mode == "STAFF":
         vid_file = st.file_uploader("Upload Direct MP4 Video File (Max 10MB)", type=["mp4", "mov", "webm"])
 
         with st.form("inventory_form"):
-            st.info("✏️ **Custom Box Headings**: Type your preferred names below so the form labels update for this item (e.g., Carton, Box, Crate, Bundle, Pieces).")
+            st.info("✏️ **Custom Box Headings**: Type your preferred names below so the form labels update for this item.")
             
-            # Editable Unit Labels
             ul1, ul2, ul3 = st.columns(3)
             with ul1:
                 custom_main_label = st.text_input("Main Unit Name (e.g. Carton, Box)", value=str(curr_data.get('unit_main_label', 'Carton') or 'Carton'))
@@ -710,8 +708,12 @@ else:
                         if has_direct_vid or has_url_vid:
                             with st.expander("🎥 Watch Product Video Advert"):
                                 if has_direct_vid:
-                                    vid_bytes = base64.b64decode(s_row['video_data'])
-                                    st.video(vid_bytes)
+                                    # Safe base64 decoding wrapped in try/except to prevent binascii crashes
+                                    try:
+                                        vid_bytes = base64.b64decode(s_row['video_data'])
+                                        st.video(vid_bytes)
+                                    except Exception:
+                                        st.error("Video file is corrupted or improperly formatted in the database.")
                                 elif has_url_vid:
                                     st.video(s_row['video_url'])
                                 
