@@ -5,6 +5,7 @@ from datetime import datetime, date
 import base64
 from io import BytesIO
 from PIL import Image
+import math
 
 # ==========================================
 # 1. DATABASE SYSTEM & INITIALIZATION (SUPABASE)
@@ -84,6 +85,21 @@ def get_file_base64(uploaded_file):
 
 def get_now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def sanitize_payload(payload):
+    """Guarantees zero NaN or invalid float values are ever passed to JSON / Supabase"""
+    cleaned = {}
+    for k, v in payload.items():
+        if v is None:
+            cleaned[k] = 0 if k in ['qty_cartons', 'packs_per_carton', 'units_per_pack'] else (0.0 if k in ['cost', 'price_carton', 'price_pack', 'price_retail'] else "")
+        elif isinstance(v, float):
+            if math.isnan(v) or math.isinf(v) or pd.isna(v):
+                cleaned[k] = 0.0 if k in ['cost', 'price_carton', 'price_pack', 'price_retail'] else 0
+            else:
+                cleaned[k] = v
+        else:
+            cleaned[k] = v
+    return cleaned
 
 # ==========================================
 # 3. UI CONFIGURATION & AUTHENTICATION
@@ -347,25 +363,24 @@ if view_mode == "STAFF":
                     def safe_float(val):
                         try:
                             f = float(val)
-                            return 0.0 if (pd.isna(f) or f != f) else f
+                            return 0.0 if (pd.isna(f) or f != f or math.isnan(f) or math.isinf(f)) else f
                         except Exception:
                             return 0.0
 
                     def safe_int(val):
                         try:
                             f = float(val)
-                            return 0 if (pd.isna(f) or f != f) else int(f)
+                            return 0 if (pd.isna(f) or f != f or math.isnan(f) or math.isinf(f)) else int(f)
                         except Exception:
                             return 0
 
-                    # Bulletproof UTF-8 encoding for emojis & special symbols
                     safe_name = str(n_name).encode('utf-8', 'ignore').decode('utf-8').strip()
                     safe_desc = str(n_desc).encode('utf-8', 'ignore').decode('utf-8').strip() if n_desc else ""
 
                     img_encoded = get_image_base64(chosen_image) if chosen_image else curr_data.get('img_data')
                     video_encoded = get_file_base64(vid_file) if vid_file else curr_data.get('video_data')
                     
-                    prod_payload = {
+                    raw_payload = {
                         "name": safe_name,
                         "cost": safe_float(n_cost),
                         "price_carton": safe_float(n_pc),
@@ -382,10 +397,12 @@ if view_mode == "STAFF":
                         "description": safe_desc,
                         "timestamp": get_now()
                     }
+
+                    # Absolute final guard: sanitize payload dictionary against any NaNs
+                    prod_payload = sanitize_payload(raw_payload)
                     
                     try:
                         if action == "Update Existing Item" and 'id' in curr_data:
-                            # Update using unique database ID to prevent string matching issues
                             supabase.table("products").update(prod_payload).eq("id", int(curr_data['id'])).execute()
                             st.success(f"Updated '{safe_name}' successfully!")
                         else:
