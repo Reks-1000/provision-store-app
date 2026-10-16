@@ -47,13 +47,9 @@ try:
 except Exception:
     pass
 
-def fetch_dataframe(table_name, query_filter=None):
+def fetch_dataframe(table_name):
     try:
-        query = supabase.table(table_name).select("*")
-        if query_filter:
-            for k, v in query_filter.items():
-                query = query.eq(k, v)
-        response = query.execute()
+        response = supabase.table(table_name).select("*").execute()
         if response.data:
             return pd.DataFrame(response.data)
         return pd.DataFrame()
@@ -125,14 +121,13 @@ st.set_page_config(page_title="Sammyreks Business Center", layout="wide", page_i
 if 'auth' not in st.session_state:
     st.session_state.auth = {"logged_in": False, "user": None, "role": None, "store_slug": "sammyreks", "store_name": "Sammyreks Business Center"}
 
-# Global default store title for sidebar footer
+# Safe default declarations
 store_title = "Sammyreks Business Center"
+query_params = st.query_params
+url_store = query_params.get("store", "sammyreks")
 
 st.sidebar.title("🏢 Sammyreks Portal")
 st.sidebar.markdown("---")
-
-query_params = st.query_params
-url_store = query_params.get("store", "sammyreks")
 
 if not st.session_state.auth["logged_in"]:
     auth_mode = st.sidebar.selectbox("Choose Portal", ["🛍️ Customer Shop", "🔑 Staff/Admin Login", "🏬 Merchant Partner Login"])
