@@ -352,8 +352,8 @@ if view_mode == "STAFF":
                     img_encoded = get_image_base64(chosen_image) if chosen_image else curr_data.get('img_data')
                     video_encoded = get_file_base64(vid_file) if vid_file else curr_data.get('video_data')
                     
-                    prod_payload = {
-                        "name": n_name,
+                   prod_payload = {
+                        "name": str(n_name).encode('utf-8', 'ignore').decode('utf-8').strip(),
                         "cost": safe_float(n_cost),
                         "price_carton": safe_float(n_pc),
                         "price_pack": safe_float(n_pp),
@@ -366,7 +366,7 @@ if view_mode == "STAFF":
                         "img_data": img_encoded,
                         "video_data": video_encoded,
                         "video_url": str(n_video_url).strip() if n_video_url else "",
-                        "description": str(n_desc).strip() if n_desc else "",
+                        "description": str(n_desc).encode('utf-8', 'ignore').decode('utf-8').strip() if n_desc else "",
                         "timestamp": get_now()
                     }
                     
