@@ -45,9 +45,10 @@ def fetch_dataframe(table_name):
         return pd.DataFrame()
 
 # ==========================================
-# 2. CORE UTILITY FUNCTIONS
+# 2. CORE UTILITY FUNCTIONS (HD IMAGE SHARPNESS)
 # ==========================================
 def get_image_base64(uploaded_file):
+    """Encodes images at maximum HD quality without blur or compression loss"""
     if uploaded_file is not None:
         try:
             if isinstance(uploaded_file, Image.Image):
@@ -59,7 +60,8 @@ def get_image_base64(uploaded_file):
                 img = img.convert("RGB")
                 
             buffered = BytesIO()
-            img.save(buffered, format="JPEG", quality=75)
+            # Saved at maximum 100% quality to prevent any blurriness
+            img.save(buffered, format="JPEG", quality=100, subsampling=0)
             return base64.b64encode(buffered.getvalue()).decode()
         except Exception as e:
             st.error(f"Image processing failed: {e}")
@@ -302,7 +304,7 @@ if view_mode == "STAFF":
                 "unit_main_label": "Carton", "unit_pack_label": "Pack", "unit_retail_label": "Retail Unit"
             }
         
-        st.write("📷 **Product Image Input**")
+        st.write("📷 **Product Image Input (Crisp HD Quality)**")
         img_tab1, img_tab2 = st.tabs(["📁 Upload Image File", "📋 Paste from Clipboard"])
         chosen_image = None
 
@@ -323,7 +325,7 @@ if view_mode == "STAFF":
                 )
                 if paste_result.image_data is not None:
                     chosen_image = paste_result.image_data
-                    st.image(chosen_image, caption="Pasted Image Preview", width=120)
+                    st.image(chosen_image, caption="Pasted Image Preview", width=150)
             except Exception:
                 st.info("Paste from clipboard component not available.")
 
@@ -694,7 +696,8 @@ else:
                     with col_img:
                         img_bytes = display_image_base64(s_row.get('img_data'))
                         if img_bytes:
-                            st.image(img_bytes, width=150)
+                            # Rendered at full crisp width
+                            st.image(img_bytes, width=200)
                         else:
                             st.info("No Image")
                     with col_info:
@@ -708,7 +711,6 @@ else:
                         if has_direct_vid or has_url_vid:
                             with st.expander("🎥 Watch Product Video Advert"):
                                 if has_direct_vid:
-                                    # Safe base64 decoding wrapped in try/except to prevent binascii crashes
                                     try:
                                         vid_bytes = base64.b64decode(s_row['video_data'])
                                         st.video(vid_bytes)
