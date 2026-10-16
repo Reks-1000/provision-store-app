@@ -307,8 +307,6 @@ if view_mode == "STAFF":
         vid_file = st.file_uploader("Upload Direct MP4 Video File (Max 10MB)", type=["mp4", "mov", "webm"])
 
         with st.form("inventory_form"):
-            # FLEXIBLE PACKAGING SELECTOR (Editable labels / unbundled items)
-            st.info("💡 **Packaging Setup**: If your product is not sold in cartons, select your packaging type below or adjust the quantity labels.")
             pkg_mode = st.radio("Primary Packaging Unit", ["Standard Carton / Box", "Bundle / Pack Only", "Loose Pieces / Units Only"], horizontal=True)
 
             ca, cb, cc = st.columns(3)
@@ -323,7 +321,6 @@ if view_mode == "STAFF":
             with cc:
                 n_stock = st.number_input("Total Stock Quantity", value=float(curr_data.get('qty_cartons', 0)))
                 
-                # Dynamic labels depending on packaging mode
                 if pkg_mode == "Standard Carton / Box":
                     n_ppc = st.number_input("Packs per Carton", value=int(curr_data.get('packs_per_carton', 1)), min_value=1)
                     n_upp = st.number_input("Units per Pack", value=int(curr_data.get('units_per_pack', 1)), min_value=1)
@@ -333,7 +330,6 @@ if view_mode == "STAFF":
                 else:
                     n_ppc = 1
                     n_upp = 1
-                    st.caption("Unit-only mode: Packs & Units locked to 1.")
             
             try:
                 default_exp = datetime.strptime(str(curr_data.get('expiry')), '%Y-%m-%d').date()
@@ -362,7 +358,7 @@ if view_mode == "STAFF":
                         except Exception:
                             return 0
 
-                    # Unicode safe encoding to handle emojis/symbols without crashing JSON
+                    # Bulletproof UTF-8 encoding for emojis & special symbols
                     safe_name = str(n_name).encode('utf-8', 'ignore').decode('utf-8').strip()
                     safe_desc = str(n_desc).encode('utf-8', 'ignore').decode('utf-8').strip() if n_desc else ""
 
@@ -388,8 +384,9 @@ if view_mode == "STAFF":
                     }
                     
                     try:
-                        if action == "Update Existing Item":
-                            supabase.table("products").update(prod_payload).eq("name", target).execute()
+                        if action == "Update Existing Item" and 'id' in curr_data:
+                            # Update using unique database ID to prevent string matching issues
+                            supabase.table("products").update(prod_payload).eq("id", int(curr_data['id'])).execute()
                             st.success(f"Updated '{safe_name}' successfully!")
                         else:
                             supabase.table("products").insert(prod_payload).execute()
@@ -397,7 +394,7 @@ if view_mode == "STAFF":
                         st.rerun()
                     except Exception as save_error:
                         if "duplicate key value" in str(save_error) or "23505" in str(save_error):
-                            st.error(f"A product named '{safe_name}' already exists. Switch action to 'Update Existing Item' to edit it.")
+                            st.error(f"A product named '{safe_name}' already exists. Please use a unique name.")
                         else:
                             st.error(f"Database Save Error: {save_error}")
 
@@ -675,7 +672,6 @@ else:
                         st.write(s_row.get('description', ''))
                         st.caption(f"Location: {s_row.get('shelf', 'N/A')}")
                         
-                        # IN-APP DIRECT VIDEO ADVERT PLAYER
                         has_direct_vid = s_row.get('video_data') and str(s_row['video_data']).strip() not in ["None", "", "nan"]
                         has_url_vid = s_row.get('video_url') and str(s_row['video_url']).strip() not in ["None", "", "nan"]
 
@@ -694,7 +690,6 @@ else:
                         price = s_row['price_retail'] if unit_choice == "Retail" else (s_row['price_pack'] if unit_choice == "Pack" else s_row['price_carton'])
                         total_calc = price * qty_choice
                         
-                        # POPOVER MODAL FOR PLACING ORDERS
                         with st.popover(f"🛒 Order - ₦{total_calc:,.2f}"):
                             st.subheader(f"Confirm Order for {s_row['name']}")
                             with st.form(key=f"popover_form_{s_row['id']}"):
