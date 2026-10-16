@@ -87,7 +87,6 @@ def get_now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def sanitize_payload(payload):
-    """Guarantees zero NaN or invalid float values are ever passed to JSON / Supabase"""
     cleaned = {}
     for k, v in payload.items():
         if v is None:
@@ -208,12 +207,18 @@ if view_mode == "STAFF":
             with col_pos1:
                 sel_item = st.selectbox("Search & Select Item", df_p_pos['name'])
                 p = df_p_pos[df_p_pos['name'] == sel_item].iloc[0]
-                sale_unit = st.radio("Selling Unit", ["Carton", "Pack", "Retail Unit"])
+                
+                # Dynamic unit labels from product record
+                m_label = p.get('unit_main_label', 'Carton') or 'Carton'
+                p_label = p.get('unit_pack_label', 'Pack') or 'Pack'
+                r_label = p.get('unit_retail_label', 'Retail Unit') or 'Retail Unit'
+                
+                sale_unit = st.radio("Selling Unit", [m_label, p_label, r_label])
                 sale_qty = st.number_input("Quantity", min_value=1, value=1)
                 c_name_pos = st.text_input("Customer Name")
                 c_phone_pos = st.text_input("Customer Phone Number")
             with col_pos2:
-                up = p['price_carton'] if sale_unit == "Carton" else (p['price_pack'] if sale_unit == "Pack" else p['price_retail'])
+                up = p['price_carton'] if sale_unit == m_label else (p['price_pack'] if sale_unit == p_label else p['price_retail'])
                 grand_total = up * sale_qty
                 st.subheader(f"Total: ₦{grand_total:,.2f}")
                 
@@ -223,10 +228,10 @@ if view_mode == "STAFF":
                         packs_per_c = p.get('packs_per_carton', 1) or 1
                         units_per_p = p.get('units_per_pack', 1) or 1
                         
-                        if sale_unit == "Carton":
+                        if sale_unit == m_label:
                             uc = p['cost']
                             cartons_deducted = sale_qty
-                        elif sale_unit == "Pack":
+                        elif sale_unit == p_label:
                             uc = p['cost'] / packs_per_c
                             cartons_deducted = sale_qty / packs_per_c
                         else:
@@ -262,9 +267,9 @@ if view_mode == "STAFF":
                             
                             packs_per_c = p.get('packs_per_carton', 1) or 1
                             units_per_p = p.get('units_per_pack', 1) or 1
-                            if sale_unit == "Carton":
+                            if sale_unit == m_label:
                                 cartons_deducted = sale_qty
-                            elif sale_unit == "Pack":
+                            elif sale_unit == p_label:
                                 cartons_deducted = sale_qty / packs_per_c
                             else:
                                 cartons_deducted = sale_qty / (packs_per_c * units_per_p)
@@ -291,7 +296,12 @@ if view_mode == "STAFF":
             target = st.selectbox("Select Item to Update", df_inv['name'])
             curr_data = df_inv[df_inv['name'] == target].iloc[0]
         else:
-            curr_data = {"name":"","cost":0.0,"price_carton":0.0,"price_pack":0.0,"price_retail":0.0,"qty_cartons":0,"packs_per_carton":1,"units_per_pack":1,"shelf":"","expiry":str(date.today()),"description":"","img_data":None,"video_url":"","video_data":None}
+            curr_data = {
+                "name": "", "cost": 0.0, "price_carton": 0.0, "price_pack": 0.0, "price_retail": 0.0,
+                "qty_cartons": 0, "packs_per_carton": 1, "units_per_pack": 1, "shelf": "",
+                "expiry": str(date.today()), "description": "", "img_data": None, "video_url": "", "video_data": None,
+                "unit_main_label": "Carton", "unit_pack_label": "Pack", "unit_retail_label": "Retail Unit"
+            }
         
         st.write("📷 **Product Image Input**")
         img_tab1, img_tab2 = st.tabs(["📁 Upload Image File", "📋 Paste from Clipboard"])
@@ -323,29 +333,32 @@ if view_mode == "STAFF":
         vid_file = st.file_uploader("Upload Direct MP4 Video File (Max 10MB)", type=["mp4", "mov", "webm"])
 
         with st.form("inventory_form"):
-            pkg_mode = st.radio("Primary Packaging Unit", ["Standard Carton / Box", "Bundle / Pack Only", "Loose Pieces / Units Only"], horizontal=True)
+            st.info("✏️ **Custom Box Headings**: Type your preferred names below so the form labels update for this item (e.g., Carton, Box, Crate, Bundle, Pieces).")
+            
+            # Editable Unit Labels
+            ul1, ul2, ul3 = st.columns(3)
+            with ul1:
+                custom_main_label = st.text_input("Main Unit Name (e.g. Carton, Box)", value=str(curr_data.get('unit_main_label', 'Carton') or 'Carton'))
+            with ul2:
+                custom_pack_label = st.text_input("Sub-Unit Name (e.g. Pack, Bundle)", value=str(curr_data.get('unit_pack_label', 'Pack') or 'Pack'))
+            with ul3:
+                custom_retail_label = st.text_input("Retail Name (e.g. Piece, Bottle)", value=str(curr_data.get('unit_retail_label', 'Retail Unit') or 'Retail Unit'))
+
+            st.divider()
 
             ca, cb, cc = st.columns(3)
             with ca:
                 n_name = st.text_input("Product Name", value=str(curr_data['name'])).strip()
-                n_cost = st.number_input("Cost Price (Per Main Unit)", value=float(curr_data.get('cost', 0.0)))
+                n_cost = st.number_input(f"Cost Price (Per {custom_main_label})", value=float(curr_data.get('cost', 0.0)))
                 n_shelf = st.text_input("Shelf Location", value=str(curr_data.get('shelf', '')))
             with cb:
-                n_pc = st.number_input("Price (Per Carton / Main Unit)", value=float(curr_data.get('price_carton', 0.0)))
-                n_pp = st.number_input("Price (Per Pack)", value=float(curr_data.get('price_pack', 0.0)))
-                n_pr = st.number_input("Price (Retail / Single Unit)", value=float(curr_data.get('price_retail', 0.0)))
+                n_pc = st.number_input(f"Price (Per {custom_main_label})", value=float(curr_data.get('price_carton', 0.0)))
+                n_pp = st.number_input(f"Price (Per {custom_pack_label})", value=float(curr_data.get('price_pack', 0.0)))
+                n_pr = st.number_input(f"Price (Per {custom_retail_label})", value=float(curr_data.get('price_retail', 0.0)))
             with cc:
-                n_stock = st.number_input("Total Stock Quantity", value=float(curr_data.get('qty_cartons', 0)))
-                
-                if pkg_mode == "Standard Carton / Box":
-                    n_ppc = st.number_input("Packs per Carton", value=int(curr_data.get('packs_per_carton', 1)), min_value=1)
-                    n_upp = st.number_input("Units per Pack", value=int(curr_data.get('units_per_pack', 1)), min_value=1)
-                elif pkg_mode == "Bundle / Pack Only":
-                    n_ppc = st.number_input("Packs / Bundle Count", value=int(curr_data.get('packs_per_carton', 1)), min_value=1)
-                    n_upp = st.number_input("Units per Pack", value=int(curr_data.get('units_per_pack', 1)), min_value=1)
-                else:
-                    n_ppc = 1
-                    n_upp = 1
+                n_stock = st.number_input(f"Total Stock ({custom_main_label}s)", value=float(curr_data.get('qty_cartons', 0)))
+                n_ppc = st.number_input(f"Count of {custom_pack_label}s in 1 {custom_main_label}", value=int(curr_data.get('packs_per_carton', 1)), min_value=1)
+                n_upp = st.number_input(f"Count of {custom_retail_label}s in 1 {custom_pack_label}", value=int(curr_data.get('units_per_pack', 1)), min_value=1)
             
             try:
                 default_exp = datetime.strptime(str(curr_data.get('expiry')), '%Y-%m-%d').date()
@@ -395,10 +408,12 @@ if view_mode == "STAFF":
                         "video_data": video_encoded,
                         "video_url": str(n_video_url).strip() if n_video_url else "",
                         "description": safe_desc,
+                        "unit_main_label": custom_main_label.strip() or "Carton",
+                        "unit_pack_label": custom_pack_label.strip() or "Pack",
+                        "unit_retail_label": custom_retail_label.strip() or "Retail Unit",
                         "timestamp": get_now()
                     }
 
-                    # Absolute final guard: sanitize payload dictionary against any NaNs
                     prod_payload = sanitize_payload(raw_payload)
                     
                     try:
@@ -701,10 +716,14 @@ else:
                                     st.video(s_row['video_url'])
                                 
                     with col_order:
-                        unit_choice = st.selectbox("Select Unit", ["Retail", "Pack", "Carton"], key=f"unit_{s_row['id']}")
+                        m_lbl = s_row.get('unit_main_label', 'Carton') or 'Carton'
+                        p_lbl = s_row.get('unit_pack_label', 'Pack') or 'Pack'
+                        r_lbl = s_row.get('unit_retail_label', 'Retail Unit') or 'Retail Unit'
+
+                        unit_choice = st.selectbox("Select Unit", [r_lbl, p_lbl, m_lbl], key=f"unit_{s_row['id']}")
                         qty_choice = st.number_input("Qty", min_value=1, key=f"qty_{s_row['id']}")
                         
-                        price = s_row['price_retail'] if unit_choice == "Retail" else (s_row['price_pack'] if unit_choice == "Pack" else s_row['price_carton'])
+                        price = s_row['price_retail'] if unit_choice == r_lbl else (s_row['price_pack'] if unit_choice == p_lbl else s_row['price_carton'])
                         total_calc = price * qty_choice
                         
                         with st.popover(f"🛒 Order - ₦{total_calc:,.2f}"):
