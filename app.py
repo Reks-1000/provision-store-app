@@ -300,7 +300,8 @@ if view_mode == "STAFF":
                 "name": "", "cost": 0.0, "price_carton": 0.0, "price_pack": 0.0, "price_retail": 0.0,
                 "qty_cartons": 0, "packs_per_carton": 1, "units_per_pack": 1, "shelf": "",
                 "expiry": str(date.today()), "description": "", "img_data": None, "video_url": "", "video_data": None,
-                "unit_main_label": "Carton", "unit_pack_label": "Pack", "unit_retail_label": "Retail Unit"
+                "unit_main_label": "Carton", "unit_pack_label": "Pack", "unit_retail_label": "Retail Unit",
+                "category": "General"
             }
         
         st.write("📷 **Product Image Input (Crisp HD Quality)**")
@@ -333,8 +334,17 @@ if view_mode == "STAFF":
         vid_file = st.file_uploader("Upload Direct MP4 Video File (Max 10MB)", type=["mp4", "mov", "webm"])
 
         with st.form("inventory_form"):
-            st.info("✏️ **Custom Box Headings**: Type your preferred names below so the form labels update for this item.")
+            st.info("✏️ **Category & Box Headings**: Choose your product category and customize packaging names below.")
             
+            # Category selection
+            default_cat = str(curr_data.get('category', 'General') or 'General')
+            category_options = ["Raw Food", "Beverages", "Books", "Electronics", "Toiletries", "Provision", "General"]
+            if default_cat not in category_options:
+                category_options.append(default_cat)
+            
+            sel_category = st.selectbox("Product Category", category_options, index=category_options.index(default_cat))
+
+            st.divider()
             ul1, ul2, ul3 = st.columns(3)
             with ul1:
                 custom_main_label = st.text_input("Main Unit Name (e.g. Carton, Box)", value=str(curr_data.get('unit_main_label', 'Carton') or 'Carton'))
@@ -407,6 +417,7 @@ if view_mode == "STAFF":
                         "video_data": video_encoded,
                         "video_url": str(n_video_url).strip() if n_video_url else "",
                         "description": safe_desc,
+                        "category": sel_category,
                         "unit_main_label": custom_main_label.strip() or "Carton",
                         "unit_pack_label": custom_pack_label.strip() or "Pack",
                         "unit_retail_label": custom_retail_label.strip() or "Retail Unit",
@@ -603,8 +614,15 @@ if view_mode == "STAFF":
 # 5. CUSTOMER PORTAL
 # ==========================================
 else:
-    st.title("🏢 Sammyreks Business Center")
-    c_tab1, c_tab2, c_tab3, c_tab4 = st.tabs(["🛍️ Shop Now", "📝 Special Request", "🔍 Track My Order", "💬 Chat with Us"])
+    # Warm Welcome Banner for Customers
+    st.markdown("""
+        <div style="background: linear-gradient(135deg, #2e7d32, #1b5e20); padding: 25px; border-radius: 12px; color: white; text-align: center; margin-bottom: 25px;">
+            <h1 style="margin: 0; font-size: 2.2rem;">🏢 Welcome to Sammyreks Business Center</h1>
+            <p style="margin: 8px 0 0 0; font-size: 1.1rem; opacity: 0.9;">Your trusted plug for raw food, beverages, books, and premium provisions!</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    c_tab1, c_tab2, c_tab3, c_tab4 = st.tabs(["🛍️ Shop by Category", "📝 Special Request", "🔍 Track My Order", "💬 Chat with Us"])
     
     with c_tab2:
         st.subheader("Can't find what you need?")
@@ -671,92 +689,106 @@ else:
         else:
             st.warning("Please enter your phone number to load or start a chat thread.")
 
-    # CUSTOMER SHOPPING SECTION
+    # CUSTOMER SHOPPING SECTION WITH CATEGORY FILTER
     with c_tab1:
-        col_search1, col_search2 = st.columns([2, 1])
-        with col_search1:
-            search_query = st.text_input("🔍 Search for products...", placeholder="Enter product name...")
-        with col_search2:
-            st.write(f"Today's Date: {date.today()}")
-
         try:
             res_shop = supabase.table("products").select("*").gt("qty_cartons", 0).execute()
             df_shop = pd.DataFrame(res_shop.data) if res_shop.data else pd.DataFrame()
         except Exception:
             df_shop = pd.DataFrame()
-            
-        if search_query and not df_shop.empty:
-            df_shop = df_shop[df_shop['name'].str.contains(search_query, case=False)]
 
         if not df_shop.empty:
-            for index, s_row in df_shop.iterrows():
-                with st.container():
-                    col_img, col_info, col_order = st.columns([1, 2, 1.5])
-                    with col_img:
-                        img_bytes = display_image_base64(s_row.get('img_data'))
-                        if img_bytes:
-                            st.image(img_bytes, width=200)
-                        else:
-                            st.info("No Image")
-                    with col_info:
-                        st.subheader(s_row['name'])
-                        st.write(s_row.get('description', ''))
-                        st.caption(f"Location: {s_row.get('shelf', 'N/A')}")
-                        
-                        has_direct_vid = s_row.get('video_data') and str(s_row['video_data']).strip() not in ["None", "", "nan"]
-                        has_url_vid = s_row.get('video_url') and str(s_row['video_url']).strip() not in ["None", "", "nan"]
+            # Ensure category column exists in dataframe
+            if 'category' not in df_shop.columns:
+                df_shop['category'] = 'General'
 
-                        if has_direct_vid or has_url_vid:
-                            with st.expander("🎥 Watch Product Video Advert"):
-                                if has_direct_vid:
-                                    try:
-                                        vid_bytes = base64.b64decode(s_row['video_data'])
-                                        st.video(vid_bytes)
-                                    except Exception:
-                                        st.error("Video file is corrupted or improperly formatted in the database.")
-                                elif has_url_vid:
-                                    st.video(s_row['video_url'])
-                                
-                    with col_order:
-                        m_lbl = s_row.get('unit_main_label', 'Carton') or 'Carton'
-                        p_lbl = s_row.get('unit_pack_label', 'Pack') or 'Pack'
-                        r_lbl = s_row.get('unit_retail_label', 'Retail Unit') or 'Retail Unit'
+            # Get unique categories
+            categories = ["All Categories"] + sorted(df_shop['category'].dropna().unique().tolist())
+            
+            col_filt1, col_filt2 = st.columns([1, 2])
+            with col_filt1:
+                selected_cat = st.selectbox("📂 Filter by Category", categories)
+            with col_filt2:
+                search_query = st.text_input("🔍 Search products...", placeholder="Type product name...")
 
-                        unit_choice = st.selectbox("Select Unit", [r_lbl, p_lbl, m_lbl], key=f"unit_{s_row['id']}")
-                        qty_choice = st.number_input("Qty", min_value=1, key=f"qty_{s_row['id']}")
-                        
-                        price = s_row['price_retail'] if unit_choice == r_lbl else (s_row['price_pack'] if unit_choice == p_lbl else s_row['price_carton'])
-                        total_calc = price * qty_choice
-                        
-                        with st.popover(f"🛒 Order - ₦{total_calc:,.2f}"):
-                            st.subheader(f"Sammyreks Business Center\nConfirm Order for {s_row['name']}")
-                            with st.form(key=f"popover_form_{s_row['id']}"):
-                                c_name = st.text_input("Full Name")
-                                c_phone = st.text_input("Phone Number")
-                                submit_order = st.form_submit_button("Confirm Order Now")
-                                
-                                if submit_order:
-                                    if c_name.strip() and c_phone.strip():
-                                        order_payload = {
-                                            "customer": c_name,
-                                            "item": f"{s_row['name']} ({unit_choice})",
-                                            "qty": int(qty_choice),
-                                            "status": "Order Placed",
-                                            "contact_phone": c_phone,
-                                            "total_price": float(total_calc),
-                                            "date": date.today().isoformat(),
-                                            "timestamp": get_now()
-                                        }
+            # Filter dataframe
+            if selected_cat != "All Categories":
+                df_shop = df_shop[df_shop['category'] == selected_cat]
+            if search_query:
+                df_shop = df_shop[df_shop['name'].str.contains(search_query, case=False)]
+
+            if not df_shop.empty:
+                st.markdown("---")
+                for index, s_row in df_shop.iterrows():
+                    with st.container():
+                        col_img, col_info, col_order = st.columns([1, 2, 1.5])
+                        with col_img:
+                            img_bytes = display_image_base64(s_row.get('img_data'))
+                            if img_bytes:
+                                st.image(img_bytes, width=200)
+                            else:
+                                st.info("No Image")
+                        with col_info:
+                            st.subheader(s_row['name'])
+                            st.caption(f"📂 Category: **{s_row.get('category', 'General')}** | 📍 Shelf: {s_row.get('shelf', 'N/A')}")
+                            st.write(s_row.get('description', ''))
+                            
+                            has_direct_vid = s_row.get('video_data') and str(s_row['video_data']).strip() not in ["None", "", "nan"]
+                            has_url_vid = s_row.get('video_url') and str(s_row['video_url']).strip() not in ["None", "", "nan"]
+
+                            if has_direct_vid or has_url_vid:
+                                with st.expander("🎥 Watch Product Video Advert"):
+                                    if has_direct_vid:
                                         try:
-                                            supabase.table("orders").insert(order_payload).execute()
-                                            st.success(f"✅ Success! Your order for {s_row['name']} has been placed.")
-                                            st.rerun()
-                                        except Exception as err:
-                                            st.error(f"Order submission failed: {err}")
-                                    else:
-                                        st.error("Please enter both Name and Phone Number.")
-                    st.divider()
-        else:
-            st.warning("No products found.")
+                                            vid_bytes = base64.b64decode(s_row['video_data'])
+                                            st.video(vid_bytes)
+                                        except Exception:
+                                            st.error("Video file is corrupted.")
+                                    elif has_url_vid:
+                                        st.video(s_row['video_url'])
+                                    
+                        with col_order:
+                            m_lbl = s_row.get('unit_main_label', 'Carton') or 'Carton'
+                            p_lbl = s_row.get('unit_pack_label', 'Pack') or 'Pack'
+                            r_lbl = s_row.get('unit_retail_label', 'Retail Unit') or 'Retail Unit'
 
-st.sidebar.caption(f"Sammyreks Business Center v5.0 | {date.today().year}")
+                            unit_choice = st.selectbox("Select Unit", [r_lbl, p_lbl, m_lbl], key=f"unit_{s_row['id']}")
+                            qty_choice = st.number_input("Qty", min_value=1, key=f"qty_{s_row['id']}")
+                            
+                            price = s_row['price_retail'] if unit_choice == r_lbl else (s_row['price_pack'] if unit_choice == p_lbl else s_row['price_carton'])
+                            total_calc = price * qty_choice
+                            
+                            with st.popover(f"🛒 Order - ₦{total_calc:,.2f}"):
+                                st.subheader(f"Sammyreks Business Center\nConfirm Order for {s_row['name']}")
+                                with st.form(key=f"popover_form_{s_row['id']}"):
+                                    c_name = st.text_input("Full Name")
+                                    c_phone = st.text_input("Phone Number")
+                                    submit_order = st.form_submit_button("Confirm Order Now")
+                                    
+                                    if submit_order:
+                                        if c_name.strip() and c_phone.strip():
+                                            order_payload = {
+                                                "customer": c_name,
+                                                "item": f"{s_row['name']} ({unit_choice})",
+                                                "qty": int(qty_choice),
+                                                "status": "Order Placed",
+                                                "contact_phone": c_phone,
+                                                "total_price": float(total_calc),
+                                                "date": date.today().isoformat(),
+                                                "timestamp": get_now()
+                                            }
+                                            try:
+                                                supabase.table("orders").insert(order_payload).execute()
+                                                st.success(f"✅ Success! Your order for {s_row['name']} has been placed.")
+                                                st.rerun()
+                                            except Exception as err:
+                                                st.error(f"Order submission failed: {err}")
+                                        else:
+                                            st.error("Please enter both Name and Phone Number.")
+                        st.divider()
+            else:
+                st.warning("No products found matching this category or search.")
+        else:
+            st.warning("No products available in stock yet.")
+
+st.sidebar.caption(f"Sammyreks Business Center v6.0 | {date.today().year}")
