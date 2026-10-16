@@ -307,19 +307,33 @@ if view_mode == "STAFF":
         vid_file = st.file_uploader("Upload Direct MP4 Video File (Max 10MB)", type=["mp4", "mov", "webm"])
 
         with st.form("inventory_form"):
+            # FLEXIBLE PACKAGING SELECTOR (Editable labels / unbundled items)
+            st.info("💡 **Packaging Setup**: If your product is not sold in cartons, select your packaging type below or adjust the quantity labels.")
+            pkg_mode = st.radio("Primary Packaging Unit", ["Standard Carton / Box", "Bundle / Pack Only", "Loose Pieces / Units Only"], horizontal=True)
+
             ca, cb, cc = st.columns(3)
             with ca:
                 n_name = st.text_input("Product Name", value=str(curr_data['name'])).strip()
-                n_cost = st.number_input("Cost per Carton", value=float(curr_data.get('cost', 0.0)))
+                n_cost = st.number_input("Cost Price (Per Main Unit)", value=float(curr_data.get('cost', 0.0)))
                 n_shelf = st.text_input("Shelf Location", value=str(curr_data.get('shelf', '')))
             with cb:
-                n_pc = st.number_input("Price/Carton", value=float(curr_data.get('price_carton', 0.0)))
-                n_pp = st.number_input("Price/Pack", value=float(curr_data.get('price_pack', 0.0)))
-                n_pr = st.number_input("Price/Retail", value=float(curr_data.get('price_retail', 0.0)))
+                n_pc = st.number_input("Price (Per Carton / Main Unit)", value=float(curr_data.get('price_carton', 0.0)))
+                n_pp = st.number_input("Price (Per Pack)", value=float(curr_data.get('price_pack', 0.0)))
+                n_pr = st.number_input("Price (Retail / Single Unit)", value=float(curr_data.get('price_retail', 0.0)))
             with cc:
-                n_stock = st.number_input("Stock (Cartons)", value=float(curr_data.get('qty_cartons', 0)))
-                n_ppc = st.number_input("Packs/Carton", value=int(curr_data.get('packs_per_carton', 1)), min_value=1)
-                n_upp = st.number_input("Units/Pack", value=int(curr_data.get('units_per_pack', 1)), min_value=1)
+                n_stock = st.number_input("Total Stock Quantity", value=float(curr_data.get('qty_cartons', 0)))
+                
+                # Dynamic labels depending on packaging mode
+                if pkg_mode == "Standard Carton / Box":
+                    n_ppc = st.number_input("Packs per Carton", value=int(curr_data.get('packs_per_carton', 1)), min_value=1)
+                    n_upp = st.number_input("Units per Pack", value=int(curr_data.get('units_per_pack', 1)), min_value=1)
+                elif pkg_mode == "Bundle / Pack Only":
+                    n_ppc = st.number_input("Packs / Bundle Count", value=int(curr_data.get('packs_per_carton', 1)), min_value=1)
+                    n_upp = st.number_input("Units per Pack", value=int(curr_data.get('units_per_pack', 1)), min_value=1)
+                else:
+                    n_ppc = 1
+                    n_upp = 1
+                    st.caption("Unit-only mode: Packs & Units locked to 1.")
             
             try:
                 default_exp = datetime.strptime(str(curr_data.get('expiry')), '%Y-%m-%d').date()
@@ -334,7 +348,6 @@ if view_mode == "STAFF":
                 if not n_name:
                     st.error("Product Name is required.")
                 else:
-                    # Sanitize inputs to prevent NaN/Inf JSON errors
                     def safe_float(val):
                         try:
                             f = float(val)
@@ -349,11 +362,15 @@ if view_mode == "STAFF":
                         except Exception:
                             return 0
 
+                    # Unicode safe encoding to handle emojis/symbols without crashing JSON
+                    safe_name = str(n_name).encode('utf-8', 'ignore').decode('utf-8').strip()
+                    safe_desc = str(n_desc).encode('utf-8', 'ignore').decode('utf-8').strip() if n_desc else ""
+
                     img_encoded = get_image_base64(chosen_image) if chosen_image else curr_data.get('img_data')
                     video_encoded = get_file_base64(vid_file) if vid_file else curr_data.get('video_data')
                     
-                   prod_payload = {
-                        "name": str(n_name).encode('utf-8', 'ignore').decode('utf-8').strip(),
+                    prod_payload = {
+                        "name": safe_name,
                         "cost": safe_float(n_cost),
                         "price_carton": safe_float(n_pc),
                         "price_pack": safe_float(n_pp),
@@ -366,21 +383,21 @@ if view_mode == "STAFF":
                         "img_data": img_encoded,
                         "video_data": video_encoded,
                         "video_url": str(n_video_url).strip() if n_video_url else "",
-                        "description": str(n_desc).encode('utf-8', 'ignore').decode('utf-8').strip() if n_desc else "",
+                        "description": safe_desc,
                         "timestamp": get_now()
                     }
                     
                     try:
                         if action == "Update Existing Item":
                             supabase.table("products").update(prod_payload).eq("name", target).execute()
-                            st.success(f"Updated '{n_name}' successfully!")
+                            st.success(f"Updated '{safe_name}' successfully!")
                         else:
                             supabase.table("products").insert(prod_payload).execute()
-                            st.success(f"Added '{n_name}' to inventory!")
+                            st.success(f"Added '{safe_name}' to inventory!")
                         st.rerun()
                     except Exception as save_error:
                         if "duplicate key value" in str(save_error) or "23505" in str(save_error):
-                            st.error(f"A product named '{n_name}' already exists. Switch action to 'Update Existing Item' to edit it.")
+                            st.error(f"A product named '{safe_name}' already exists. Switch action to 'Update Existing Item' to edit it.")
                         else:
                             st.error(f"Database Save Error: {save_error}")
 
