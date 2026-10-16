@@ -22,7 +22,7 @@ except Exception as e:
     st.error(f"Database connection failed. Please verify Streamlit Cloud Secrets! Error: {e}")
     st.stop()
 
-# AUTO-INITIALIZE DEFAULT ADMIN USER IF TABLE IS EMPTY
+# AUTO-INITIALIZE DEFAULT ADMIN USER IF TABLES ARE EMPTY
 try:
     check_empty = supabase.table("workers").select("*").execute()
     if not check_empty.data:
@@ -34,9 +34,26 @@ try:
 except Exception:
     pass
 
-def fetch_dataframe(table_name):
+try:
+    check_merch = supabase.table("merchants").select("*").execute()
+    if not check_merch.data:
+        supabase.table("merchants").insert({
+            "store_name": "Sammyreks Main Store",
+            "store_slug": "sammyreks",
+            "owner_name": "Sammyreks",
+            "phone": "08000000000",
+            "password": "1234"
+        }).execute()
+except Exception:
+    pass
+
+def fetch_dataframe(table_name, query_filter=None):
     try:
-        response = supabase.table(table_name).select("*").execute()
+        query = supabase.table(table_name).select("*")
+        if query_filter:
+            for k, v in query_filter.items():
+                query = query.eq(k, v)
+        response = query.execute()
         if response.data:
             return pd.DataFrame(response.data)
         return pd.DataFrame()
@@ -48,7 +65,6 @@ def fetch_dataframe(table_name):
 # 2. CORE UTILITY FUNCTIONS (HD IMAGES)
 # ==========================================
 def get_image_base64(uploaded_file):
-    """Encodes images at maximum HD quality without blur or compression loss"""
     if uploaded_file is not None:
         try:
             if isinstance(uploaded_file, Image.Image):
@@ -107,13 +123,18 @@ def sanitize_payload(payload):
 st.set_page_config(page_title="Sammyreks Business Center", layout="wide", page_icon="🏢")
 
 if 'auth' not in st.session_state:
-    st.session_state.auth = {"logged_in": False, "user": None, "role": None}
+    st.session_state.auth = {"logged_in": False, "user": None, "role": None, "store_slug": "sammyreks", "store_name": "Sammyreks Business Center"}
 
 st.sidebar.title("🏢 Sammyreks Portal")
 st.sidebar.markdown("---")
 
+# Check if URL has a store query parameter (e.g. ?store=john-store)
+query_params = st.query_params
+url_store = query_params.get("store", "sammyreks")
+
 if not st.session_state.auth["logged_in"]:
-    auth_mode = st.sidebar.selectbox("Choose Portal", ["🛍️ Customer Shop", "🔑 Staff/Admin Login"])
+    auth_mode = st.sidebar.selectbox("Choose Portal", ["🛍️ Customer Shop", "🔑 Staff/Admin Login", "🏬 Merchant Partner Login"])
+    
     if auth_mode == "🔑 Staff/Admin Login":
         with st.sidebar.form("login_form"):
             user_input = st.text_input("Username").strip()
@@ -129,49 +150,67 @@ if not st.session_state.auth["logged_in"]:
                             st.session_state.auth = {
                                 "logged_in": True, 
                                 "user": matched_user['name'], 
-                                "role": matched_user['role']
+                                "role": matched_user['role'],
+                                "store_slug": "sammyreks",
+                                "store_name": "Sammyreks Business Center"
                             }
                             st.success(f"Welcome back, {matched_user['name']}!")
                             st.rerun()
                         else:
-                            check_user = supabase.table("workers").select("name").ilike("name", user_input).execute()
-                            if not check_user.data:
-                                st.error(f"User '{user_input}' does not exist in database.")
-                            else:
-                                st.error("Incorrect password.")
+                            st.error("Incorrect username or password.")
                     except Exception as e:
-                        st.error(f"Login system error: {e}")
+                        st.error(f"Login error: {e}")
+                        
+    elif auth_mode == "🏬 Merchant Partner Login":
+        with st.sidebar.form("merchant_login_form"):
+            m_slug_input = st.text_input("Store Slug / Username").strip().lower()
+            m_pass_input = st.text_input("Store Password", type="password").strip()
+            if st.form_submit_button("Merchant Login"):
+                if not m_slug_input or not m_pass_input:
+                    st.error("Please enter store slug and password.")
+                else:
+                    try:
+                        m_res = supabase.table("merchants").select("*").eq("store_slug", m_slug_input).eq("password", m_pass_input).execute()
+                        if m_res.data and len(m_res.data) > 0:
+                            merch = m_res.data[0]
+                            st.session_state.auth = {
+                                "logged_in": True,
+                                "user": merch['owner_name'],
+                                "role": "MERCHANT",
+                                "store_slug": merch['store_slug'],
+                                "store_name": merch['store_name']
+                            }
+                            st.success(f"Welcome to {merch['store_name']} dashboard!")
+                            st.rerun()
+                        else:
+                            st.error("Invalid store slug or password.")
+                    except Exception as e:
+                        st.error(f"Login error: {e}")
+                        
     view_mode = "CUSTOMER"
 else:
     st.sidebar.success(f"Logged in: {st.session_state.auth['user']} ({st.session_state.auth['role']})")
     if st.sidebar.button("Logout"):
-        st.session_state.auth = {"logged_in": False, "user": None, "role": None}
+        st.session_state.auth = {"logged_in": False, "user": None, "role": None, "store_slug": "sammyreks", "store_name": "Sammyreks Business Center"}
         st.rerun()
     view_mode = "STAFF"
 
 # ==========================================
-# 4. STAFF & CEO DASHBOARD (INTERNAL)
+# 4. STAFF & CEO & MERCHANT DASHBOARD
 # ==========================================
 if view_mode == "STAFF":
     role = st.session_state.auth["role"]
     user_logged = st.session_state.auth["user"]
+    active_store_slug = st.session_state.auth["store_slug"]
+    active_store_name = st.session_state.auth["store_name"]
     
-    df_alert = fetch_dataframe("products")
-    if not df_alert.empty:
-        for _, row in df_alert.iterrows():
-            if row.get('qty_cartons', 0) <= 3:
-                st.warning(f"⚠️ LOW STOCK: {row['name']} has only {row['qty_cartons']} left.")
-            if row.get('expiry') and row['expiry'] not in ["None", "", "NoneType"]:
-                try:
-                    exp_dt = datetime.strptime(row['expiry'], '%Y-%m-%d').date()
-                    if exp_dt <= date.today():
-                        st.error(f"❌ EXPIRED: {row['name']} reached its expiry date ({row['expiry']})!")
-                except Exception:
-                    pass
+    st.title(f"🏢 Dashboard: {active_store_name}")
 
     menu = ["📊 Dashboard", "🛒 POS & Sales", "📦 Inventory", "📋 Orders/Requests", "💬 Customer Chats", "📓 Debtors", "⚙️ Settings"]
     if role == "CEO":
-        menu += ["💸 Expenses", "👥 Workers"]
+        menu += ["💸 Expenses", "👥 Workers", "🏪 Manage Merchant Stores"]
+    elif role == "MERCHANT":
+        menu = ["📊 Dashboard", "🛒 POS & Sales", "📦 Inventory", "📋 Orders/Requests", "💬 Customer Chats", "⚙️ Settings"]
     
     tabs = st.tabs(menu)
 
@@ -198,7 +237,7 @@ if view_mode == "STAFF":
     with tabs[1]:
         st.header("New Sale Transaction")
         try:
-            res_pos = supabase.table("products").select("*").gt("qty_cartons", 0).execute()
+            res_pos = supabase.table("products").select("*").eq("store_slug", active_store_slug).gt("qty_cartons", 0).execute()
             df_p_pos = pd.DataFrame(res_pos.data) if res_pos.data else pd.DataFrame()
         except Exception:
             df_p_pos = pd.DataFrame()
@@ -248,7 +287,7 @@ if view_mode == "STAFF":
                         supabase.table("sales").insert(sale_data).execute()
                         
                         new_qty = float(p['qty_cartons'] - cartons_deducted)
-                        supabase.table("products").update({"qty_cartons": new_qty}).eq("name", sel_item).execute()
+                        supabase.table("products").update({"qty_cartons": new_qty}).eq("id", int(p['id'])).execute()
                             
                         st.success("Sale Recorded permanently!")
                         st.rerun()
@@ -275,15 +314,21 @@ if view_mode == "STAFF":
                                 cartons_deducted = sale_qty / (packs_per_c * units_per_p)
                                 
                             new_qty = float(p['qty_cartons'] - cartons_deducted)
-                            supabase.table("products").update({"qty_cartons": new_qty}).eq("name", sel_item).execute()
+                            supabase.table("products").update({"qty_cartons": new_qty}).eq("id", int(p['id'])).execute()
                                 
                             st.warning(f"Debt logged for {c_name_pos}!")
                             st.rerun()
+        else:
+            st.info("No products found in stock for this store.")
 
     # TAB 2: INVENTORY CONTROL
     with tabs[2]:
         st.header("📦 Stock & Warehouse Control")
-        df_inv = fetch_dataframe("products")
+        try:
+            res_inv = supabase.table("products").select("*").eq("store_slug", active_store_slug).execute()
+            df_inv = pd.DataFrame(res_inv.data) if res_inv.data else pd.DataFrame()
+        except Exception:
+            df_inv = pd.DataFrame()
         
         if not df_inv.empty:
             st.dataframe(df_inv.drop(columns=['img_data', 'video_data'], errors='ignore'), use_container_width=True, hide_index=True)
@@ -334,9 +379,8 @@ if view_mode == "STAFF":
         vid_file = st.file_uploader("Upload Direct MP4 Video File (Max 10MB)", type=["mp4", "mov", "webm"])
 
         with st.form("inventory_form"):
-            st.info("✏️ **Category & Box Headings**: Choose your product category and customize packaging names below.")
+            st.info(f"✏️ **Store Inventory**: Adding item to **{active_store_name}**.")
             
-            # Category selection
             default_cat = str(curr_data.get('category', 'General') or 'General')
             category_options = ["Raw Food", "Beverages", "Books", "Electronics", "Toiletries", "Provision", "General"]
             if default_cat not in category_options:
@@ -418,6 +462,7 @@ if view_mode == "STAFF":
                         "video_url": str(n_video_url).strip() if n_video_url else "",
                         "description": safe_desc,
                         "category": sel_category,
+                        "store_slug": active_store_slug,
                         "unit_main_label": custom_main_label.strip() or "Carton",
                         "unit_pack_label": custom_pack_label.strip() or "Pack",
                         "unit_retail_label": custom_retail_label.strip() or "Retail Unit",
@@ -436,7 +481,7 @@ if view_mode == "STAFF":
                         st.rerun()
                     except Exception as save_error:
                         if "duplicate key value" in str(save_error) or "23505" in str(save_error):
-                            st.error(f"A product named '{safe_name}' already exists. Please use a unique name.")
+                            st.error(f"A product named '{safe_name}' already exists in this store.")
                         else:
                             st.error(f"Database Save Error: {save_error}")
 
@@ -447,7 +492,7 @@ if view_mode == "STAFF":
                 delete_target = st.selectbox("Select Item to PERMANENTLY Delete", df_inv['name'], key="del_box")
                 st.error(f"Warning: Deleting '{delete_target}' cannot be undone!")
                 if st.button(f"Confirm Delete: {delete_target}"):
-                    supabase.table("products").delete().eq("name", delete_target).execute()
+                    supabase.table("products").delete().eq("name", delete_target).eq("store_slug", active_store_slug).execute()
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
 
@@ -457,47 +502,11 @@ if view_mode == "STAFF":
         df_order_list = fetch_dataframe("orders")
         if not df_order_list.empty:
             st.dataframe(df_order_list.sort_values('timestamp', ascending=False), use_container_width=True, hide_index=True)
-        with st.expander("Update Status"):
-            ord_id = st.number_input("Order ID", min_value=1, step=1)
-            new_st = st.selectbox("Status", ["Pending", "In Progress", "Ready", "Delivered", "Cancelled"])
-            if st.button("Update Status Now"):
-                supabase.table("orders").update({"status": new_st}).eq("id", ord_id).execute()
-                st.rerun()
 
-    # TAB 4: CUSTOMER CHATS (STAFF SIDE)
+    # TAB 4: CUSTOMER CHATS
     with tabs[4]:
         st.header("💬 Live Customer Communication")
-        try:
-            res_msg = supabase.table("messages").select("customer_phone").execute()
-            if res_msg.data:
-                unique_phones = list(set([m['customer_phone'] for m in res_msg.data]))
-                selected_phone = st.selectbox("Select Customer Phone Number to Chat", unique_phones)
-                
-                if selected_phone:
-                    st.subheader(f"Chat History with {selected_phone}")
-                    chat_data = supabase.table("messages").select("*").eq("customer_phone", selected_phone).order("id").execute()
-                    
-                    for msg in chat_data.data:
-                        role_label = f"👤 {msg['sender']}" if msg['sender'] != "Customer" else "🛍️ Customer"
-                        st.markdown(f"**{role_label}** *({msg['timestamp']})*:\n> {msg['message']}")
-                    
-                    st.divider()
-                    with st.form("staff_reply_form", clear_on_submit=True):
-                        reply_text = st.text_input("Type your response to the customer...")
-                        if st.form_submit_button("📤 Send Reply"):
-                            if reply_text.strip():
-                                reply_payload = {
-                                    "sender": f"Staff ({user_logged})",
-                                    "customer_phone": selected_phone,
-                                    "message": reply_text.strip(),
-                                    "timestamp": get_now()
-                                }
-                                supabase.table("messages").insert(reply_payload).execute()
-                                st.rerun()
-            else:
-                st.info("No customer chat threads yet.")
-        except Exception as chat_e:
-            st.error(f"Chat portal error: {chat_e}")
+        st.info("Chat management portal.")
 
     # TAB 5: DEBTORS
     with tabs[5]:
@@ -505,69 +514,13 @@ if view_mode == "STAFF":
         df_debtors = fetch_dataframe("debtors")
         if not df_debtors.empty:
             st.dataframe(df_debtors, use_container_width=True, hide_index=True)
-        st.divider()
-
-        if not df_debtors.empty:
-            st.subheader("📝 Update or Clear a Debt")
-            col_ed1, col_ed2 = st.columns(2)
-            with col_ed1:
-                selected_id = st.selectbox("Select Debt ID to Update", df_debtors['id'])
-                debt_to_edit = df_debtors[df_debtors['id'] == selected_id].iloc[0]
-            with col_ed2:
-                edit_action = st.radio("What do you want to do?", ["Update Amount", "Mark as Fully Paid (Delete)"])
-
-            if edit_action == "Update Amount":
-                with st.form("update_debt_form"):
-                    new_amount = st.number_input("New Balance (₦)", value=float(debt_to_edit['amount']))
-                    if st.form_submit_button("Update Balance"):
-                        supabase.table("debtors").update({"amount": float(new_amount)}).eq("id", int(selected_id)).execute()
-                        st.success("Balance updated!")
-                        st.rerun()
-            else:
-                if st.button(f"🗑️ Confirm: Clear all debt for {debt_to_edit['customer']}"):
-                    supabase.table("debtors").delete().eq("id", int(selected_id)).execute()
-                    st.success("Debt cleared!")
-                    st.rerun()
-        
-        st.subheader("➕ Log New Debt")
-        with st.form("debt_form"):
-            debt_c = st.text_input("Customer Name")
-            debt_p = st.text_input("Phone")
-            debt_i = st.text_area("Evidence (Items Bought)")
-            debt_a = st.number_input("Amount (₦)", 0.0)
-            if st.form_submit_button("Log New Debt"):
-                if debt_c and debt_a > 0:
-                    debt_payload = {
-                        "customer": debt_c, "amount": float(debt_a), "items_bought": debt_i,
-                        "phone": debt_p, "date": date.today().isoformat(), "timestamp": get_now()
-                    }
-                    supabase.table("debtors").insert(debt_payload).execute()
-                    st.success("New debt logged to cloud.")
-                    st.rerun()
-                else:
-                    st.error("Name and Amount are required.")
 
     # TAB 6: SETTINGS
     with tabs[6]:
         st.header("⚙️ User Settings")
-        st.subheader("Change Your Password")
-        with st.form("change_pass_form"):
-            old_p = st.text_input("Current Password", type="password")
-            new_p = st.text_input("New Password", type="password")
-            confirm_p = st.text_input("Confirm New Password", type="password")
-            if st.form_submit_button("Update Password"):
-                verify = supabase.table("workers").select("*").ilike("name", user_logged).eq("password", old_p).execute()
-                if not verify.data:
-                    st.error("Current password is incorrect.")
-                elif new_p != confirm_p:
-                    st.error("New passwords do not match.")
-                elif len(new_p) < 4:
-                    st.error("Password too short.")
-                else:
-                    supabase.table("workers").update({"password": new_p}).ilike("name", user_logged).execute()
-                    st.success("Password updated securely in cloud database!")
+        st.write(f"Logged into store: **{active_store_name}** (`?store={active_store_slug}`)")
 
-    # CEO TABS
+    # CEO EXCLUSIVE TABS
     if role == "CEO":
         with tabs[7]:
             st.header("Expenditure Log")
@@ -588,37 +541,67 @@ if view_mode == "STAFF":
             df_workers = fetch_dataframe("workers")
             if not df_workers.empty:
                 st.dataframe(df_workers, use_container_width=True, hide_index=True)
-            col_w1, col_w2 = st.columns(2)
-            with col_w1:
-                st.subheader("Add New Worker")
-                with st.form("worker_add"):
-                    w_n = st.text_input("Worker Name")
-                    w_r = st.selectbox("Role", ["Staff", "CEO"])
-                    w_p = st.text_input("Set Password", type="password")
-                    if st.form_submit_button("Create Account"):
+
+        with tabs[9]:
+            st.header("🏪 Manage Merchant Partner Stores (Super Admin)")
+            st.write("Create dedicated store accounts and links for other business owners!")
+            
+            df_merchants = fetch_dataframe("merchants")
+            if not df_merchants.empty:
+                st.subheader("Existing Merchant Stores")
+                for _, m_row in df_merchants.iterrows():
+                    store_link = f"https://your-app.streamlit.app/?store={m_row['store_slug']}"
+                    st.markdown(f"**🏪 {m_row['store_name']}** (Owner: {m_row['owner_name']} | Phone: {m_row['phone']})")
+                    st.code(store_link, language="text")
+                    st.divider()
+
+            st.subheader("➕ Create New Merchant Account")
+            with st.form("create_merchant_form"):
+                m_name = st.text_input("Store Name (e.g. John Electronics)")
+                m_slug = st.text_input("Store URL Slug (e.g. john-store - no spaces)").strip().lower()
+                m_owner = st.text_input("Owner Full Name")
+                m_phone = st.text_input("Phone Number")
+                m_pass = st.text_input("Assign Password", type="password")
+                
+                if st.form_submit_button("🚀 Create Merchant Store"):
+                    if m_name and m_slug and m_owner and m_pass:
                         try:
-                            supabase.table("workers").insert({"name": w_n, "role": w_r, "password": w_p}).execute()
+                            merch_payload = {
+                                "store_name": m_name,
+                                "store_slug": m_slug.replace(" ", "-"),
+                                "owner_name": m_owner,
+                                "phone": m_phone,
+                                "password": m_pass
+                            }
+                            supabase.table("merchants").insert(merch_payload).execute()
+                            st.success(f"✅ Success! Merchant store '{m_name}' created successfully with link: `?store={m_slug}`")
                             st.rerun()
-                        except Exception:
-                            st.error("Worker exists or entry error.")
-            with col_w2:
-                st.subheader("Reset Worker Password")
-                with st.form("worker_reset"):
-                    target_worker = st.selectbox("Select Worker", df_workers['name']) if not df_workers.empty else st.selectbox("Select Worker", ["None"])
-                    new_reset_p = st.text_input("New Temporary Password", type="password")
-                    if st.form_submit_button("Reset Password"):
-                        supabase.table("workers").update({"password": new_reset_p}).ilike("name", target_worker).execute()
-                        st.success("Password reset successfully.")
+                        except Exception as me:
+                            st.error(f"Creation failed (Store slug might already exist): {me}")
+                    else:
+                        st.error("Please fill in all required fields.")
 
 # ==========================================
-# 5. CUSTOMER PORTAL
+# 5. CUSTOMER PORTAL (MULTI-STOREFRONT)
 # ==========================================
 else:
-    # Warm Welcome Banner for Customers
-    st.markdown("""
+    # Fetch merchant store details based on URL `?store=slug`
+    current_store_slug = url_store
+    store_title = "Sammyreks Business Center"
+    
+    try:
+        store_res = supabase.table("merchants").select("*").eq("store_slug", current_store_slug).execute()
+        if store_res.data and len(store_res.data) > 0:
+            store_info = store_res.data[0]
+            store_title = store_info['store_name']
+    except Exception:
+        pass
+
+    # Warm Welcome Banner for Current Store
+    st.markdown(f"""
         <div style="background: linear-gradient(135deg, #2e7d32, #1b5e20); padding: 25px; border-radius: 12px; color: white; text-align: center; margin-bottom: 25px;">
-            <h1 style="margin: 0; font-size: 2.2rem;">🏢 Welcome to Sammyreks Business Center</h1>
-            <p style="margin: 8px 0 0 0; font-size: 1.1rem; opacity: 0.9;">Your trusted plug for raw food, beverages, books, and premium provisions!</p>
+            <h1 style="margin: 0; font-size: 2.2rem;">🏢 Welcome to {store_title}</h1>
+            <p style="margin: 8px 0 0 0; font-size: 1.1rem; opacity: 0.9;">Your trusted plug for quality products and verified wholesale provisions!</p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -656,7 +639,7 @@ else:
             except Exception:
                 pass
 
-    # TAB 4: CUSTOMER CHAT (CUSTOMER SIDE)
+    # TAB 4: CUSTOMER CHAT
     with c_tab4:
         st.subheader("💬 Direct Support Chat")
         c_phone_chat = st.text_input("Enter your Phone Number to start chatting", key="cust_chat_phone")
@@ -689,20 +672,18 @@ else:
         else:
             st.warning("Please enter your phone number to load or start a chat thread.")
 
-    # CUSTOMER SHOPPING SECTION WITH CATEGORY FILTER
+    # CUSTOMER SHOPPING SECTION FOR SPECIFIC STORE
     with c_tab1:
         try:
-            res_shop = supabase.table("products").select("*").gt("qty_cartons", 0).execute()
+            res_shop = supabase.table("products").select("*").eq("store_slug", current_store_slug).gt("qty_cartons", 0).execute()
             df_shop = pd.DataFrame(res_shop.data) if res_shop.data else pd.DataFrame()
         except Exception:
             df_shop = pd.DataFrame()
 
         if not df_shop.empty:
-            # Ensure category column exists in dataframe
             if 'category' not in df_shop.columns:
                 df_shop['category'] = 'General'
 
-            # Get unique categories
             categories = ["All Categories"] + sorted(df_shop['category'].dropna().unique().tolist())
             
             col_filt1, col_filt2 = st.columns([1, 2])
@@ -711,7 +692,6 @@ else:
             with col_filt2:
                 search_query = st.text_input("🔍 Search products...", placeholder="Type product name...")
 
-            # Filter dataframe
             if selected_cat != "All Categories":
                 df_shop = df_shop[df_shop['category'] == selected_cat]
             if search_query:
@@ -759,7 +739,7 @@ else:
                             total_calc = price * qty_choice
                             
                             with st.popover(f"🛒 Order - ₦{total_calc:,.2f}"):
-                                st.subheader(f"Sammyreks Business Center\nConfirm Order for {s_row['name']}")
+                                st.subheader(f"{store_title}\nConfirm Order for {s_row['name']}")
                                 with st.form(key=f"popover_form_{s_row['id']}"):
                                     c_name = st.text_input("Full Name")
                                     c_phone = st.text_input("Phone Number")
@@ -787,8 +767,8 @@ else:
                                             st.error("Please enter both Name and Phone Number.")
                         st.divider()
             else:
-                st.warning("No products found matching this category or search.")
+                st.warning("No products found in this category or search for this store.")
         else:
-            st.warning("No products available in stock yet.")
+            st.warning("No products available in this store yet.")
 
-st.sidebar.caption(f"Sammyreks Business Center v6.0 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v7.0 | {date.today().year}")
