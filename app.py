@@ -38,7 +38,7 @@ try:
     check_merch = supabase.table("merchants").select("*").execute()
     if not check_merch.data:
         supabase.table("merchants").insert({
-            "store_name": "Sammyreks Main Store",
+            "store_name": "Sammyreks Business Center",
             "store_slug": "sammyreks",
             "owner_name": "Sammyreks",
             "phone": "08000000000",
@@ -125,10 +125,12 @@ st.set_page_config(page_title="Sammyreks Business Center", layout="wide", page_i
 if 'auth' not in st.session_state:
     st.session_state.auth = {"logged_in": False, "user": None, "role": None, "store_slug": "sammyreks", "store_name": "Sammyreks Business Center"}
 
+# Global default store title for sidebar footer
+store_title = "Sammyreks Business Center"
+
 st.sidebar.title("🏢 Sammyreks Portal")
 st.sidebar.markdown("---")
 
-# Check if URL has a store query parameter (e.g. ?store=john-store)
 query_params = st.query_params
 url_store = query_params.get("store", "sammyreks")
 
@@ -203,6 +205,7 @@ if view_mode == "STAFF":
     user_logged = st.session_state.auth["user"]
     active_store_slug = st.session_state.auth["store_slug"]
     active_store_name = st.session_state.auth["store_name"]
+    store_title = active_store_name
     
     st.title(f"🏢 Dashboard: {active_store_name}")
 
@@ -543,7 +546,7 @@ if view_mode == "STAFF":
                 st.dataframe(df_workers, use_container_width=True, hide_index=True)
 
         with tabs[9]:
-            st.header("🏪 Manage Merchant Partner Stores (Super Admin)")
+            st.header("🏪 Manage Merchant Stores (Super Admin)")
             st.write("Create dedicated store accounts and links for other business owners!")
             
             df_merchants = fetch_dataframe("merchants")
@@ -585,7 +588,6 @@ if view_mode == "STAFF":
 # 5. CUSTOMER PORTAL (MULTI-STOREFRONT)
 # ==========================================
 else:
-    # Fetch merchant store details based on URL `?store=slug`
     current_store_slug = url_store
     store_title = "Sammyreks Business Center"
     
@@ -597,7 +599,6 @@ else:
     except Exception:
         pass
 
-    # Warm Welcome Banner for Current Store
     st.markdown(f"""
         <div style="background: linear-gradient(135deg, #2e7d32, #1b5e20); padding: 25px; border-radius: 12px; color: white; text-align: center; margin-bottom: 25px;">
             <h1 style="margin: 0; font-size: 2.2rem;">🏢 Welcome to {store_title}</h1>
@@ -639,7 +640,6 @@ else:
             except Exception:
                 pass
 
-    # TAB 4: CUSTOMER CHAT
     with c_tab4:
         st.subheader("💬 Direct Support Chat")
         c_phone_chat = st.text_input("Enter your Phone Number to start chatting", key="cust_chat_phone")
@@ -672,7 +672,6 @@ else:
         else:
             st.warning("Please enter your phone number to load or start a chat thread.")
 
-    # CUSTOMER SHOPPING SECTION FOR SPECIFIC STORE
     with c_tab1:
         try:
             res_shop = supabase.table("products").select("*").eq("store_slug", current_store_slug).gt("qty_cartons", 0).execute()
