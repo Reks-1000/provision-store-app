@@ -45,7 +45,7 @@ def fetch_dataframe(table_name):
         return pd.DataFrame()
 
 # ==========================================
-# 2. CORE UTILITY FUNCTIONS (HD IMAGE SHARPNESS)
+# 2. CORE UTILITY FUNCTIONS (HD IMAGES)
 # ==========================================
 def get_image_base64(uploaded_file):
     """Encodes images at maximum HD quality without blur or compression loss"""
@@ -60,7 +60,6 @@ def get_image_base64(uploaded_file):
                 img = img.convert("RGB")
                 
             buffered = BytesIO()
-            # Saved at maximum 100% quality to prevent any blurriness
             img.save(buffered, format="JPEG", quality=100, subsampling=0)
             return base64.b64encode(buffered.getvalue()).decode()
         except Exception as e:
@@ -105,12 +104,12 @@ def sanitize_payload(payload):
 # ==========================================
 # 3. UI CONFIGURATION & AUTHENTICATION
 # ==========================================
-st.set_page_config(page_title="Reks Enterprise Ultimate", layout="wide", page_icon="🛍️")
+st.set_page_config(page_title="Sammyreks Business Center", layout="wide", page_icon="🏢")
 
 if 'auth' not in st.session_state:
     st.session_state.auth = {"logged_in": False, "user": None, "role": None}
 
-st.sidebar.title("🚀 Reks Pro Cloud Portal")
+st.sidebar.title("🏢 Sammyreks Portal")
 st.sidebar.markdown("---")
 
 if not st.session_state.auth["logged_in"]:
@@ -604,7 +603,7 @@ if view_mode == "STAFF":
 # 5. CUSTOMER PORTAL
 # ==========================================
 else:
-    st.title("🛒 Reks Customer Portal")
+    st.title("🏢 Sammyreks Business Center")
     c_tab1, c_tab2, c_tab3, c_tab4 = st.tabs(["🛍️ Shop Now", "📝 Special Request", "🔍 Track My Order", "💬 Chat with Us"])
     
     with c_tab2:
@@ -696,7 +695,6 @@ else:
                     with col_img:
                         img_bytes = display_image_base64(s_row.get('img_data'))
                         if img_bytes:
-                            # Rendered at full crisp width
                             st.image(img_bytes, width=200)
                         else:
                             st.info("No Image")
@@ -731,7 +729,7 @@ else:
                         total_calc = price * qty_choice
                         
                         with st.popover(f"🛒 Order - ₦{total_calc:,.2f}"):
-                            st.subheader(f"Confirm Order for {s_row['name']}")
+                            st.subheader(f"Sammyreks Business Center\nConfirm Order for {s_row['name']}")
                             with st.form(key=f"popover_form_{s_row['id']}"):
                                 c_name = st.text_input("Full Name")
                                 c_phone = st.text_input("Phone Number")
@@ -761,4 +759,4 @@ else:
         else:
             st.warning("No products found.")
 
-st.sidebar.caption(f"Reks Ultimate Cloud v5.0 | {date.today().year}")
+st.sidebar.caption(f"Sammyreks Business Center v5.0 | {date.today().year}")
