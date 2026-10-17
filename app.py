@@ -536,9 +536,31 @@ if view_mode == "STAFF":
                 else:
                     st.error("Name and Amount are required.")
 
-    # TAB 6: SETTINGS
+    # TAB 6: SETTINGS (Includes General Awareness Video Upload)
     with tabs[6]:
-        st.header("⚙️ User Settings")
+        st.header("⚙️ User Settings & General Advert Video")
+        
+        st.subheader("📢 General Awareness / Advert Video")
+        st.caption("Upload or update the general video displayed at the top of the customer portal.")
+        
+        gen_vid_file = st.file_uploader("Upload General Advert MP4 Video", type=["mp4", "mov", "webm"], key="gen_vid_upload")
+        
+        if gen_vid_file:
+            if st.button("💾 Save General Advert Video"):
+                try:
+                    vid_encoded = get_file_base64(gen_vid_file)
+                    # Check if key exists
+                    chk_setting = supabase.table("app_settings").select("*").eq("key", "general_video").execute()
+                    if chk_setting.data:
+                        supabase.table("app_settings").update({"value": vid_encoded}).eq("key", "general_video").execute()
+                    else:
+                        supabase.table("app_settings").insert({"key": "general_video", "value": vid_encoded}).execute()
+                    st.success("General awareness video updated successfully!")
+                    st.rerun()
+                except Exception as ex:
+                    st.error(f"Failed to save video: {ex}")
+
+        st.divider()
         st.subheader("Change Your Password")
         with st.form("change_pass_form"):
             old_p = st.text_input("Current Password", type="password")
@@ -603,6 +625,17 @@ if view_mode == "STAFF":
 # 5. CUSTOMER PORTAL
 # ==========================================
 else:
+    # 1. GENERAL AWARENESS VIDEO BOX (Displayed right above the green welcome banner where marked)
+    try:
+        set_res = supabase.table("app_settings").select("value").eq("key", "general_video").execute()
+        if set_res.data and len(set_res.data) > 0 and set_res.data[0].get('value'):
+            gen_vid_b64 = set_res.data[0]['value']
+            vid_bytes_gen = base64.b64decode(gen_vid_b64)
+            st.video(vid_bytes_gen)
+    except Exception:
+        pass
+
+    # 2. GREEN WELCOME BANNER
     st.markdown(f"""
         <div style="background: linear-gradient(135deg, #2e7d32, #1b5e20); padding: 25px; border-radius: 12px; color: white; text-align: center; margin-bottom: 25px;">
             <h1 style="margin: 0; font-size: 2.2rem;">🏢 Welcome to {store_title}</h1>
@@ -774,4 +807,4 @@ else:
         else:
             st.warning("No products available in stock yet.")
 
-st.sidebar.caption(f"{store_title} v8.0 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v8.1 | {date.today().year}")
