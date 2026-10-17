@@ -324,14 +324,11 @@ if view_mode == "STAFF":
         vid_file = st.file_uploader("Upload Direct MP4 Video File (Max 10MB)", type=["mp4", "mov", "webm"])
 
         with st.form("inventory_form"):
-            st.info("✏️ **Category & Box Headings**: Choose your product category and customize packaging names below.")
+            st.info("✏️ **Category & Box Headings**: Type any category name of your choice below.")
             
+            # FLEXIBLE TEXT INPUT FOR CATEGORY (Allows typing anything freely without 'No results' error)
             default_cat = str(curr_data.get('category', 'General') or 'General')
-            category_options = ["Raw Food", "Beverages", "Books", "Electronics", "Toiletries", "Provision", "General"]
-            if default_cat not in category_options:
-                category_options.append(default_cat)
-            
-            sel_category = st.selectbox("Product Category", category_options, index=category_options.index(default_cat))
+            sel_category = st.text_input("Product Category (Type any category e.g. Cosmetics, Drinks, Books, etc.)", value=default_cat).strip().title()
 
             st.divider()
             ul1, ul2, ul3 = st.columns(3)
@@ -370,6 +367,8 @@ if view_mode == "STAFF":
             if st.form_submit_button("💾 Save Product Data"):
                 if not n_name:
                     st.error("Product Name is required.")
+                elif not sel_category:
+                    st.error("Product Category is required.")
                 else:
                     def safe_float(val):
                         try:
@@ -536,11 +535,10 @@ if view_mode == "STAFF":
                 else:
                     st.error("Name and Amount are required.")
 
-    # TAB 6: SETTINGS (General Advert Video & Notice Board)
+    # TAB 6: SETTINGS
     with tabs[6]:
         st.header("⚙️ User Settings & Announcements")
         
-        # 1. Notice Board Manager
         st.subheader("📌 Notice Board / Announcement Ticker")
         st.caption("Type a notice (e.g. Sunday greetings, Christmas wishes, brand updates) to display on the customer app.")
         
@@ -566,7 +564,6 @@ if view_mode == "STAFF":
 
         st.divider()
 
-        # 2. General Advert Video Manager
         st.subheader("📢 General Awareness / Advert Video")
         st.caption("Upload or update the general video displayed at the top of the customer portal.")
         
@@ -651,7 +648,7 @@ if view_mode == "STAFF":
 # 5. CUSTOMER PORTAL
 # ==========================================
 else:
-    # 1. NOTICE BOARD / ANNOUNCEMENT TICKER (Displayed right where marked in green)
+    # 1. NOTICE BOARD
     try:
         notice_res = supabase.table("app_settings").select("value").eq("key", "active_notice").execute()
         if notice_res.data and len(notice_res.data) > 0 and notice_res.data[0].get('value'):
@@ -847,4 +844,4 @@ else:
         else:
             st.warning("No products available in stock yet.")
 
-st.sidebar.caption(f"{store_title} v8.2 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v8.3 | {date.today().year}")
