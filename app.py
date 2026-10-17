@@ -22,7 +22,7 @@ except Exception as e:
     st.error(f"Database connection failed. Please verify Streamlit Cloud Secrets! Error: {e}")
     st.stop()
 
-# AUTO-INITIALIZE DEFAULT ADMIN USER IF TABLE IS EMPTY
+# AUTO-INITIALIZE DEFAULT ADMIN USER IF TABLES ARE EMPTY
 try:
     check_empty = supabase.table("workers").select("*").execute()
     if not check_empty.data:
@@ -48,7 +48,6 @@ def fetch_dataframe(table_name):
 # 2. CORE UTILITY FUNCTIONS (HD IMAGES)
 # ==========================================
 def get_image_base64(uploaded_file):
-    """Encodes images at maximum HD quality without blur or compression loss"""
     if uploaded_file is not None:
         try:
             if isinstance(uploaded_file, Image.Image):
@@ -109,11 +108,14 @@ st.set_page_config(page_title="Sammyreks Business Center", layout="wide", page_i
 if 'auth' not in st.session_state:
     st.session_state.auth = {"logged_in": False, "user": None, "role": None}
 
+store_title = "Sammyreks Business Center"
+
 st.sidebar.title("🏢 Sammyreks Portal")
 st.sidebar.markdown("---")
 
 if not st.session_state.auth["logged_in"]:
     auth_mode = st.sidebar.selectbox("Choose Portal", ["🛍️ Customer Shop", "🔑 Staff/Admin Login"])
+    
     if auth_mode == "🔑 Staff/Admin Login":
         with st.sidebar.form("login_form"):
             user_input = st.text_input("Username").strip()
@@ -134,13 +136,10 @@ if not st.session_state.auth["logged_in"]:
                             st.success(f"Welcome back, {matched_user['name']}!")
                             st.rerun()
                         else:
-                            check_user = supabase.table("workers").select("name").ilike("name", user_input).execute()
-                            if not check_user.data:
-                                st.error(f"User '{user_input}' does not exist in database.")
-                            else:
-                                st.error("Incorrect password.")
+                            st.error("Incorrect username or password.")
                     except Exception as e:
-                        st.error(f"Login system error: {e}")
+                        st.error(f"Login error: {e}")
+                        
     view_mode = "CUSTOMER"
 else:
     st.sidebar.success(f"Logged in: {st.session_state.auth['user']} ({st.session_state.auth['role']})")
@@ -150,24 +149,13 @@ else:
     view_mode = "STAFF"
 
 # ==========================================
-# 4. STAFF & CEO DASHBOARD (INTERNAL)
+# 4. STAFF & CEO DASHBOARD
 # ==========================================
 if view_mode == "STAFF":
     role = st.session_state.auth["role"]
     user_logged = st.session_state.auth["user"]
     
-    df_alert = fetch_dataframe("products")
-    if not df_alert.empty:
-        for _, row in df_alert.iterrows():
-            if row.get('qty_cartons', 0) <= 3:
-                st.warning(f"⚠️ LOW STOCK: {row['name']} has only {row['qty_cartons']} left.")
-            if row.get('expiry') and row['expiry'] not in ["None", "", "NoneType"]:
-                try:
-                    exp_dt = datetime.strptime(row['expiry'], '%Y-%m-%d').date()
-                    if exp_dt <= date.today():
-                        st.error(f"❌ EXPIRED: {row['name']} reached its expiry date ({row['expiry']})!")
-                except Exception:
-                    pass
+    st.title(f"🏢 Dashboard: {store_title}")
 
     menu = ["📊 Dashboard", "🛒 POS & Sales", "📦 Inventory", "📋 Orders/Requests", "💬 Customer Chats", "📓 Debtors", "⚙️ Settings"]
     if role == "CEO":
@@ -248,7 +236,7 @@ if view_mode == "STAFF":
                         supabase.table("sales").insert(sale_data).execute()
                         
                         new_qty = float(p['qty_cartons'] - cartons_deducted)
-                        supabase.table("products").update({"qty_cartons": new_qty}).eq("name", sel_item).execute()
+                        supabase.table("products").update({"qty_cartons": new_qty}).eq("id", int(p['id'])).execute()
                             
                         st.success("Sale Recorded permanently!")
                         st.rerun()
@@ -275,10 +263,12 @@ if view_mode == "STAFF":
                                 cartons_deducted = sale_qty / (packs_per_c * units_per_p)
                                 
                             new_qty = float(p['qty_cartons'] - cartons_deducted)
-                            supabase.table("products").update({"qty_cartons": new_qty}).eq("name", sel_item).execute()
+                            supabase.table("products").update({"qty_cartons": new_qty}).eq("id", int(p['id'])).execute()
                                 
                             st.warning(f"Debt logged for {c_name_pos}!")
                             st.rerun()
+        else:
+            st.info("No products found in stock.")
 
     # TAB 2: INVENTORY CONTROL
     with tabs[2]:
@@ -336,7 +326,6 @@ if view_mode == "STAFF":
         with st.form("inventory_form"):
             st.info("✏️ **Category & Box Headings**: Choose your product category and customize packaging names below.")
             
-            # Category selection
             default_cat = str(curr_data.get('category', 'General') or 'General')
             category_options = ["Raw Food", "Beverages", "Books", "Electronics", "Toiletries", "Provision", "General"]
             if default_cat not in category_options:
@@ -436,7 +425,7 @@ if view_mode == "STAFF":
                         st.rerun()
                     except Exception as save_error:
                         if "duplicate key value" in str(save_error) or "23505" in str(save_error):
-                            st.error(f"A product named '{safe_name}' already exists. Please use a unique name.")
+                            st.error(f"A product named '{safe_name}' already exists.")
                         else:
                             st.error(f"Database Save Error: {save_error}")
 
@@ -464,7 +453,7 @@ if view_mode == "STAFF":
                 supabase.table("orders").update({"status": new_st}).eq("id", ord_id).execute()
                 st.rerun()
 
-    # TAB 4: CUSTOMER CHATS (STAFF SIDE)
+    # TAB 4: CUSTOMER CHATS
     with tabs[4]:
         st.header("💬 Live Customer Communication")
         try:
@@ -614,10 +603,9 @@ if view_mode == "STAFF":
 # 5. CUSTOMER PORTAL
 # ==========================================
 else:
-    # Warm Welcome Banner for Customers
-    st.markdown("""
+    st.markdown(f"""
         <div style="background: linear-gradient(135deg, #2e7d32, #1b5e20); padding: 25px; border-radius: 12px; color: white; text-align: center; margin-bottom: 25px;">
-            <h1 style="margin: 0; font-size: 2.2rem;">🏢 Welcome to Sammyreks Business Center</h1>
+            <h1 style="margin: 0; font-size: 2.2rem;">🏢 Welcome to {store_title}</h1>
             <p style="margin: 8px 0 0 0; font-size: 1.1rem; opacity: 0.9;">Your trusted plug for raw food, beverages, books, and premium provisions!</p>
         </div>
     """, unsafe_allow_html=True)
@@ -656,7 +644,6 @@ else:
             except Exception:
                 pass
 
-    # TAB 4: CUSTOMER CHAT (CUSTOMER SIDE)
     with c_tab4:
         st.subheader("💬 Direct Support Chat")
         c_phone_chat = st.text_input("Enter your Phone Number to start chatting", key="cust_chat_phone")
@@ -689,7 +676,6 @@ else:
         else:
             st.warning("Please enter your phone number to load or start a chat thread.")
 
-    # CUSTOMER SHOPPING SECTION WITH CATEGORY FILTER
     with c_tab1:
         try:
             res_shop = supabase.table("products").select("*").gt("qty_cartons", 0).execute()
@@ -698,11 +684,9 @@ else:
             df_shop = pd.DataFrame()
 
         if not df_shop.empty:
-            # Ensure category column exists in dataframe
             if 'category' not in df_shop.columns:
                 df_shop['category'] = 'General'
 
-            # Get unique categories
             categories = ["All Categories"] + sorted(df_shop['category'].dropna().unique().tolist())
             
             col_filt1, col_filt2 = st.columns([1, 2])
@@ -711,7 +695,6 @@ else:
             with col_filt2:
                 search_query = st.text_input("🔍 Search products...", placeholder="Type product name...")
 
-            # Filter dataframe
             if selected_cat != "All Categories":
                 df_shop = df_shop[df_shop['category'] == selected_cat]
             if search_query:
@@ -759,7 +742,7 @@ else:
                             total_calc = price * qty_choice
                             
                             with st.popover(f"🛒 Order - ₦{total_calc:,.2f}"):
-                                st.subheader(f"Sammyreks Business Center\nConfirm Order for {s_row['name']}")
+                                st.subheader(f"{store_title}\nConfirm Order for {s_row['name']}")
                                 with st.form(key=f"popover_form_{s_row['id']}"):
                                     c_name = st.text_input("Full Name")
                                     c_phone = st.text_input("Phone Number")
@@ -791,4 +774,4 @@ else:
         else:
             st.warning("No products available in stock yet.")
 
-st.sidebar.caption(f"Sammyreks Business Center v6.0 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v8.0 | {date.today().year}")
