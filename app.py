@@ -121,7 +121,6 @@ st.set_page_config(page_title="Sammyreks Business Center", layout="wide", page_i
 if 'auth' not in st.session_state:
     st.session_state.auth = {"logged_in": False, "user": None, "role": None, "store_slug": "sammyreks", "store_name": "Sammyreks Business Center"}
 
-# Safe default declarations
 store_title = "Sammyreks Business Center"
 query_params = st.query_params
 url_store = query_params.get("store", "sammyreks")
@@ -204,11 +203,12 @@ if view_mode == "STAFF":
     
     st.title(f"🏢 Dashboard: {active_store_name}")
 
-    menu = ["📊 Dashboard", "🛒 POS & Sales", "📦 Inventory", "📋 Orders/Requests", "💬 Customer Chats", "📓 Debtors", "⚙️ Settings"]
-    if role == "CEO":
-        menu += ["💸 Expenses", "👥 Workers", "🏪 Manage Merchant Stores"]
-    elif role == "MERCHANT":
+    if role == "MERCHANT":
         menu = ["📊 Dashboard", "🛒 POS & Sales", "📦 Inventory", "📋 Orders/Requests", "💬 Customer Chats", "⚙️ Settings"]
+    else:
+        menu = ["📊 Dashboard", "🛒 POS & Sales", "📦 Inventory", "📋 Orders/Requests", "💬 Customer Chats", "📓 Debtors", "⚙️ Settings"]
+        if role == "CEO":
+            menu += ["💸 Expenses", "👥 Workers", "🏪 Manage Merchant Stores"]
     
     tabs = st.tabs(menu)
 
@@ -291,7 +291,7 @@ if view_mode == "STAFF":
                         st.rerun()
                 
                 with col_btn2:
-                    if st.button("📓 Record Debt", use_container_width=True):
+                    if role != "MERCHANT" and st.button("📓 Record Debt", use_container_width=True):
                         if not c_name_pos:
                             st.error("Customer name required for Debt Evidence!")
                         else:
@@ -506,15 +506,17 @@ if view_mode == "STAFF":
         st.header("💬 Live Customer Communication")
         st.info("Chat management portal.")
 
-    # TAB 5: DEBTORS
-    with tabs[5]:
-        st.header("📓 Debtors Management")
-        df_debtors = fetch_dataframe("debtors")
-        if not df_debtors.empty:
-            st.dataframe(df_debtors, use_container_width=True, hide_index=True)
+    # TAB 5: DEBTORS (Admin only)
+    if role != "MERCHANT":
+        with tabs[5]:
+            st.header("📓 Debtors Management")
+            df_debtors = fetch_dataframe("debtors")
+            if not df_debtors.empty:
+                st.dataframe(df_debtors, use_container_width=True, hide_index=True)
 
     # TAB 6: SETTINGS
-    with tabs[6]:
+    setting_tab_idx = 6 if role != "MERCHANT" else 5
+    with tabs[setting_tab_idx]:
         st.header("⚙️ User Settings")
         st.write(f"Logged into store: **{active_store_name}** (`?store={active_store_slug}`)")
 
@@ -745,7 +747,7 @@ else:
                                                 "customer": c_name,
                                                 "item": f"{s_row['name']} ({unit_choice})",
                                                 "qty": int(qty_choice),
-                                                "status": "Order Placed",
+                                            "status": "Order Placed",
                                                 "contact_phone": c_phone,
                                                 "total_price": float(total_calc),
                                                 "date": date.today().isoformat(),
