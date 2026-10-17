@@ -536,10 +536,37 @@ if view_mode == "STAFF":
                 else:
                     st.error("Name and Amount are required.")
 
-    # TAB 6: SETTINGS (Includes General Awareness Video Upload)
+    # TAB 6: SETTINGS (General Advert Video & Notice Board)
     with tabs[6]:
-        st.header("⚙️ User Settings & General Advert Video")
+        st.header("⚙️ User Settings & Announcements")
         
+        # 1. Notice Board Manager
+        st.subheader("📌 Notice Board / Announcement Ticker")
+        st.caption("Type a notice (e.g. Sunday greetings, Christmas wishes, brand updates) to display on the customer app.")
+        
+        try:
+            curr_notice_res = supabase.table("app_settings").select("value").eq("key", "active_notice").execute()
+            existing_notice = curr_notice_res.data[0]['value'] if (curr_notice_res.data and len(curr_notice_res.data) > 0) else ""
+        except Exception:
+            existing_notice = ""
+
+        with st.form("notice_form"):
+            notice_input = st.text_area("Notice Message (Leave blank to remove notice)", value=existing_notice)
+            if st.form_submit_button("📢 Publish / Update Notice"):
+                try:
+                    chk_notice = supabase.table("app_settings").select("*").eq("key", "active_notice").execute()
+                    if chk_notice.data:
+                        supabase.table("app_settings").update({"value": notice_input.strip()}).eq("key", "active_notice").execute()
+                    else:
+                        supabase.table("app_settings").insert({"key": "active_notice", "value": notice_input.strip()}).execute()
+                    st.success("Notice board updated successfully!")
+                    st.rerun()
+                except Exception as ne:
+                    st.error(f"Failed to update notice: {ne}")
+
+        st.divider()
+
+        # 2. General Advert Video Manager
         st.subheader("📢 General Awareness / Advert Video")
         st.caption("Upload or update the general video displayed at the top of the customer portal.")
         
@@ -549,7 +576,6 @@ if view_mode == "STAFF":
             if st.button("💾 Save General Advert Video"):
                 try:
                     vid_encoded = get_file_base64(gen_vid_file)
-                    # Check if key exists
                     chk_setting = supabase.table("app_settings").select("*").eq("key", "general_video").execute()
                     if chk_setting.data:
                         supabase.table("app_settings").update({"value": vid_encoded}).eq("key", "general_video").execute()
@@ -625,7 +651,21 @@ if view_mode == "STAFF":
 # 5. CUSTOMER PORTAL
 # ==========================================
 else:
-    # 1. GENERAL AWARENESS VIDEO BOX (Displayed right above the green welcome banner where marked)
+    # 1. NOTICE BOARD / ANNOUNCEMENT TICKER (Displayed right where marked in green)
+    try:
+        notice_res = supabase.table("app_settings").select("value").eq("key", "active_notice").execute()
+        if notice_res.data and len(notice_res.data) > 0 and notice_res.data[0].get('value'):
+            notice_text = notice_res.data[0]['value'].strip()
+            if notice_text:
+                st.markdown(f"""
+                    <div style="background: #ff9800; padding: 12px 18px; border-radius: 8px; color: #000; font-weight: bold; text-align: center; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        📢 {notice_text}
+                    </div>
+                """, unsafe_allow_html=True)
+    except Exception:
+        pass
+
+    # 2. GENERAL AWARENESS VIDEO BOX
     try:
         set_res = supabase.table("app_settings").select("value").eq("key", "general_video").execute()
         if set_res.data and len(set_res.data) > 0 and set_res.data[0].get('value'):
@@ -635,7 +675,7 @@ else:
     except Exception:
         pass
 
-    # 2. GREEN WELCOME BANNER
+    # 3. GREEN WELCOME BANNER
     st.markdown(f"""
         <div style="background: linear-gradient(135deg, #2e7d32, #1b5e20); padding: 25px; border-radius: 12px; color: white; text-align: center; margin-bottom: 25px;">
             <h1 style="margin: 0; font-size: 2.2rem;">🏢 Welcome to {store_title}</h1>
@@ -807,4 +847,4 @@ else:
         else:
             st.warning("No products available in stock yet.")
 
-st.sidebar.caption(f"{store_title} v8.1 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v8.2 | {date.today().year}")
