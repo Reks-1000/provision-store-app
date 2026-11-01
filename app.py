@@ -111,6 +111,9 @@ if 'cart' not in st.session_state:
 if 'last_receipt' not in st.session_state:
     st.session_state.last_receipt = None
 
+if 'request_items_temp' not in st.session_state:
+    st.session_state.request_items_temp = [{"item": "", "qty": 1}]
+
 store_title = "Sammyreks Business Center"
 
 st.sidebar.title("🏢 Sammyreks Portal")
@@ -484,45 +487,68 @@ if view_mode == "STAFF":
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
 
-    # TAB 3: ORDERS & SPECIAL REQUESTS AUDIT
+    # TAB 3: ORDERS & MULTI-ITEM SPECIAL REQUESTS AUDIT
     with tabs[3]:
-        st.header("📋 Consolidated Customer Orders & Custom Requests")
+        st.header("📋 Consolidated Customer Orders & Multi-Item Custom Requests")
         df_order_list = fetch_dataframe("orders")
         
-        # 1. SPECIAL REQUESTS PRICING & AUDIT SECTION
-        st.subheader("✍️ Special Requests Pricing & Stock Audit")
+        # 1. MULTI-ITEM SPECIAL REQUESTS INDIVIDUAL AUDIT SECTION
+        st.subheader("✍️ Audit Individual Items in Special Requests")
         if not df_order_list.empty and 'item' in df_order_list.columns:
             df_requests = df_order_list[df_order_list['item'].str.startswith("SPECIAL:", na=False)]
             if not df_requests.empty:
-                st.info("Below are custom requests made by customers that require your price calculation and stock status update:")
-                st.dataframe(df_requests[['id', 'customer', 'contact_phone', 'item', 'qty', 'status', 'total_price', 'date']], use_container_width=True, hide_index=True)
+                st.info("Select a customer request below to price and set availability for EACH item individually:")
                 
-                with st.expander("✏️ Calculate Price & Audit Special Request", expanded=True):
-                    req_options = {f"Request #{r['id']} — {r['customer']} | {r['item']}": int(r['id']) for _, r in df_requests.iterrows()}
-                    selected_req_label = st.selectbox("Select Special Request to Audit", list(req_options.keys()))
-                    target_req_id = req_options[selected_req_label]
+                # Group requests by customer phone & timestamp batch
+                request_batches = {}
+                for (cust, phone, ts), group in df_requests.groupby(['customer', 'contact_phone', 'timestamp']):
+                    label = f"Batch Request: {cust} ({phone}) — {len(group)} Item(s) [{ts}]"
+                    request_batches[label] = group
+
+                selected_batch_label = st.selectbox("Select Customer Request Batch", list(request_batches.keys()))
+                selected_group = request_batches[selected_batch_label]
+
+                with st.form("multi_item_audit_form"):
+                    st.write(f"### Auditing Request for **{selected_group.iloc[0]['customer']}** ({selected_group.iloc[0]['contact_phone']})")
                     
-                    req_row = df_requests[df_requests['id'] == target_req_id].iloc[0]
+                    audit_payloads = []
+                    grand_batch_total = 0.0
+
+                    for idx, row in selected_group.iterrows():
+                        st.markdown(f"---")
+                        item_clean_name = str(row['item']).replace("SPECIAL:", "").strip()
+                        st.markdown(f"#### Item #{row['id']}: **{item_clean_name}** (Qty Requested: `{row['qty']}`)")
+                        
+                        ca1, ca2, ca3 = st.columns(3)
+                        with ca1:
+                            u_price = st.number_input(f"Unit Price for '{item_clean_name}' (₦)", min_value=0.0, value=float(row['total_price']/row['qty']) if row['qty']>0 else 0.0, key=f"u_price_{row['id']}")
+                        with ca2:
+                            item_total = u_price * float(row['qty'])
+                            st.write(f"**Item Total:** ₦{item_total:,.2f}")
+                            grand_batch_total += item_total
+                        with ca3:
+                            is_available = st.selectbox(f"Stock Availability", ["Available", "Unavailable / Out of Stock"], key=f"avail_{row['id']}")
+
+                        audit_payloads.append({
+                            "id": int(row['id']),
+                            "unit_price": u_price,
+                            "item_total": item_total,
+                            "status": f"Quoted - {is_available}"
+                        })
+
+                    st.markdown("---")
+                    st.markdown(f"### 🧮 **Batch Grand Total: ₦{grand_batch_total:,.2f}**")
                     
-                    col_pr1, col_pr2, col_pr3 = st.columns(3)
-                    with col_pr1:
-                        unit_p_input = st.number_input("Unit Price (₦)", min_value=0.0, value=float(req_row['total_price'] / req_row['qty']) if req_row['qty'] > 0 else 0.0)
-                    with col_pr2:
-                        tot_calc = unit_p_input * float(req_row['qty'])
-                        st.markdown(f"**Calculated Total:** ₦{tot_calc:,.2f}")
-                    with col_pr3:
-                        stock_st = st.selectbox("Availability Status:", ["Available", "Unavailable / Out of Stock"])
-                    
-                    if st.button("💾 Save Price & Send Quote to Customer Receipt Portfolio", use_container_width=True):
-                        new_status = f"Quoted - {stock_st}"
-                        supabase.table("orders").update({
-                            "total_price": float(tot_calc),
-                            "status": new_status
-                        }).eq("id", target_req_id).execute()
-                        st.success(f"Quote of ₦{tot_calc:,.2f} ({stock_st}) sent back to customer's receipt portfolio!")
+                    if st.form_submit_button("💾 Send Individual Audited Quotes to Customer Receipt Portfolio"):
+                        for payload in audit_payloads:
+                            supabase.table("orders").update({
+                                "total_price": payload['item_total'],
+                                "status": payload['status']
+                            }).eq("id", payload['id']).execute()
+                        st.success(f"Individual prices & availability quotes updated for customer receipt portfolio!")
                         st.rerun()
             else:
-                st.caption("No pending special requests found requiring price calculation.")
+                st.caption("No pending special requests found requiring itemized price audit.")
 
         st.divider()
 
@@ -771,7 +797,7 @@ if view_mode == "STAFF":
                         st.success("Password reset successfully.")
 
 # ==========================================
-# 5. CUSTOMER PORTAL
+# 5. CUSTOMER PORTAL (MULTI-ITEM SPECIAL REQUEST & AUDITING)
 # ==========================================
 else:
     # 1. NOTICE BOARD
@@ -808,7 +834,7 @@ else:
 
     c_tab1, c_tab2, c_tab3, c_tab4, c_tab5 = st.tabs([
         "🛒 [ 🛍️ ]  Shop & Cart", 
-        "📝 [ ✍️ ]  Special Request", 
+        "📝 [ ✍️ ]  Multi-Item Special Request", 
         "🔍 [ 📦 ]  Track My Order", 
         "💬 [ 💬 ]  Chat with Us", 
         "🧾 [ 📄 ]  Customer Receipt Portfolio"
@@ -817,35 +843,79 @@ else:
     cart_count = len(st.session_state.cart)
     cart_total = sum([item['total_price'] for item in st.session_state.cart])
 
+    # MULTI-ITEM SPECIAL REQUEST TAB
     with c_tab2:
-        st.subheader("Can't find what you need?")
-        with st.form("custom_order_form", clear_on_submit=True):
-            cust_n = st.text_input("Your Full Name")
-            cust_p = st.text_input("Your Phone Number")
-            cust_i = st.text_input("Item Requested")
-            cust_q = st.number_input("Quantity Needed", min_value=1)
-            if st.form_submit_button("🚀 Submit Request"):
-                if cust_n and cust_i and cust_p:
-                    order_payload = {
-                        "customer": cust_n, "item": f"SPECIAL: {cust_i}", "qty": int(cust_q),
-                        "status": "Pending Admin Price Audit", "contact_phone": cust_p, "total_price": 0.0,
-                        "date": date.today().isoformat(), "timestamp": get_now()
-                    }
-                    supabase.table("orders").insert(order_payload).execute()
+        st.subheader("Can't find what you need? Add multiple custom items below!")
+        
+        cust_n = st.text_input("Your Full Name", key="req_name_input")
+        cust_p = st.text_input("Your Phone Number", key="req_phone_input")
+        
+        st.markdown("---")
+        st.markdown("#### 📝 Custom Requested Items List")
+        
+        # Add dynamic item entries
+        for idx, entry in enumerate(st.session_state.request_items_temp):
+            c_r1, c_r2 = st.columns([3, 1])
+            with c_r1:
+                entry['item'] = st.text_input(f"Item #{idx+1} Description", value=entry['item'], key=f"req_item_{idx}")
+            with c_r2:
+                entry['qty'] = st.number_input(f"Qty", min_value=1, value=entry['qty'], key=f"req_qty_{idx}")
+        
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            if st.button("➕ Add Another Item to Request"):
+                st.session_state.request_items_temp.append({"item": "", "qty": 1})
+                st.rerun()
+        with col_m2:
+            if len(st.session_state.request_items_temp) > 1:
+                if st.button("➖ Remove Last Item"):
+                    st.session_state.request_items_temp.pop()
+                    st.rerun()
+
+        st.markdown("---")
+        if st.button("🚀 Submit Multi-Item Special Request Batch", use_container_width=True):
+            if cust_n.strip() and cust_p.strip():
+                valid_entries = [e for e in st.session_state.request_items_temp if e['item'].strip()]
+                if valid_entries:
+                    batch_timestamp = get_now()
+                    receipt_items = []
+                    for e in valid_entries:
+                        order_payload = {
+                            "customer": cust_n.strip(),
+                            "item": f"SPECIAL: {e['item'].strip()}",
+                            "qty": int(e['qty']),
+                            "status": "Pending Price Audit",
+                            "contact_phone": cust_p.strip(),
+                            "total_price": 0.0,
+                            "date": date.today().isoformat(),
+                            "timestamp": batch_timestamp
+                        }
+                        supabase.table("orders").insert(order_payload).execute()
+                        receipt_items.append({
+                            "name": f"SPECIAL: {e['item'].strip()}",
+                            "unit": "Request",
+                            "qty": int(e['qty']),
+                            "price": 0.0,
+                            "total": 0.0,
+                            "status": "Pending Price Audit"
+                        })
                     
                     st.session_state.last_receipt = {
                         "type": "Initial Custom Request Log Receipt",
-                        "customer": cust_n,
-                        "phone": cust_p,
-                        "date": get_now(),
-                        "sold_items": [{"name": f"SPECIAL: {cust_i}", "unit": "Request", "qty": cust_q, "price": 0.0, "total": 0.0}],
+                        "customer": cust_n.strip(),
+                        "phone": cust_p.strip(),
+                        "date": batch_timestamp,
+                        "sold_items": receipt_items,
                         "grand_total": 0.0,
                         "status": "Pending Admin Price Audit"
                     }
-                    st.success("✅ Request logged to database! The admin is auditing unit prices and availability. Check the 'Customer Receipt Portfolio' tab soon for your quote.")
+                    st.session_state.request_items_temp = [{"item": "", "qty": 1}]
+                    st.success("✅ Multi-item request batch submitted! The admin is auditing unit prices and availability. Check your Receipt Portfolio shortly!")
                     st.rerun()
                 else:
-                    st.error("Please fill all fields.")
+                    st.error("Please enter at least one item description.")
+            else:
+                st.error("Please fill in your Name and Phone Number.")
 
     with c_tab3:
         st.subheader("Check your order status")
@@ -892,47 +962,56 @@ else:
         else:
             st.warning("Please enter your phone number to load or start a chat thread.")
 
+    # CUSTOMER RECEIPT PORTFOLIO (WITH ITEM-BY-ITEM AVAILABILITY & INDIVIDUAL SELECTION)
     with c_tab5:
         st.subheader("🧾 Customer Order & Request Receipt Portfolio")
         
         lookup_phone = st.text_input("Enter your Phone Number to load your Portfolio Receipt")
         
         active_rec = None
-        order_batch_ids = []
+        available_order_ids = []
+        
         if lookup_phone.strip():
             try:
                 cust_orders_res = supabase.table("orders").select("*").eq("contact_phone", lookup_phone.strip()).order("id", desc=True).execute()
                 if cust_orders_res.data:
                     latest_ts = cust_orders_res.data[0]['timestamp']
                     batch_orders = [o for o in cust_orders_res.data if o['timestamp'] == latest_ts]
-                    order_batch_ids = [int(bo['id']) for bo in batch_orders]
                     
                     c_name = batch_orders[0]['customer']
-                    c_status = batch_orders[0]['status']
                     c_date = batch_orders[0]['date']
                     
                     items_list = []
                     total_sum = 0.0
+                    has_quoted = False
+                    
                     for bo in batch_orders:
+                        st_item = bo['status']
+                        if "Available" in st_item and "Unavailable" not in st_item:
+                            available_order_ids.append(int(bo['id']))
+                            
+                        if "Quoted" in st_item:
+                            has_quoted = True
+
                         items_list.append({
-                            "name": bo['item'],
-                            "unit": "Unit",
+                            "id": bo['id'],
+                            "name": str(bo['item']).replace("SPECIAL:", "").strip(),
                             "qty": bo['qty'],
                             "price": bo['total_price'] / bo['qty'] if bo['qty'] > 0 else 0.0,
-                            "total": bo['total_price']
+                            "total": bo['total_price'],
+                            "item_status": st_item
                         })
                         total_sum += bo['total_price']
                     
-                    if c_status == "Delivered":
+                    first_st = batch_orders[0]['status']
+                    if first_st == "Delivered":
                         rec_title = "Successful Delivery Receipt"
-                    elif "Quoted" in c_status:
-                        rec_title = "Quoted & Audited Receipt (Ready for Order)"
-                    elif "Pending" in c_status:
-                        rec_title = "Initial Customer Request Log Receipt"
+                    elif has_quoted:
+                        rec_title = "Quoted & Audited Receipt (Available vs Out of Stock)"
                     else:
-                        rec_title = f"Order Receipt ({c_status})"
+                        rec_title = "Initial Customer Request Log Receipt"
 
-                    if c_status != "Cancelled":
+                    if first_st != "Cancelled":
                         active_rec = {
                             "type": rec_title,
                             "customer": c_name,
@@ -940,7 +1019,7 @@ else:
                             "date": c_date,
                             "sold_items": items_list,
                             "grand_total": total_sum,
-                            "status": c_status
+                            "status": first_st
                         }
             except Exception:
                 pass
@@ -951,46 +1030,48 @@ else:
         if active_rec:
             rec_type = active_rec.get('type', 'Customer Order Receipt')
             sold_items_list = active_rec.get('sold_items', [])
-            c_st = active_rec.get('status', 'Active')
             
             receipt_html = f"""
-            <div id="receipt-box" style="background: #ffffff; color: #000; padding: 25px; border-radius: 12px; border: 3px solid #1565c0; font-family: monospace; max-width: 600px; margin: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
+            <div id="receipt-box" style="background: #ffffff; color: #000; padding: 25px; border-radius: 12px; border: 3px solid #1565c0; font-family: monospace; max-width: 650px; margin: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
                 <h2 style="text-align: center; margin: 0; color: #1565c0;">🏢 {store_title}</h2>
                 <p style="text-align: center; font-size: 0.95rem; margin: 5px 0;"><b>{rec_type}</b></p>
                 <hr>
                 <p><b>Customer Name:</b> {active_rec.get('customer', 'Customer')}</p>
                 <p><b>Phone Number:</b> {active_rec.get('phone', 'N/A')}</p>
-                <p><b>Status:</b> <span style="color: #2e7d32; font-weight: bold;">{c_st}</span></p>
                 <hr>
                 <table style="width: 100%; text-align: left; border-collapse: collapse;">
-                    <tr style="border-bottom: 1px solid #ddd;"><th>Item Description</th><th>Qty</th><th>Price</th><th>Total</th></tr>
+                    <tr style="border-bottom: 1px solid #ddd;"><th>Item Description</th><th>Qty</th><th>Price</th><th>Total</th><th>Stock Status</th></tr>
             """
             for itm in sold_items_list:
                 i_name = itm.get('name', 'Item')
-                i_unit = itm.get('unit', 'Unit')
                 i_qty = itm.get('qty', 1)
                 i_price = itm.get('price', 0.0)
                 i_total = itm.get('total', 0.0)
-                price_disp = f"₦{i_price:,.2f}" if i_price > 0 else "Pending Audit"
-                total_disp = f"₦{i_total:,.2f}" if i_total > 0 else "Pending Audit"
-                receipt_html += f"<tr style='border-bottom: 1px solid #eee;'><td>{i_name} ({i_unit})</td><td>{i_qty}</td><td>{price_disp}</td><td>{total_disp}</td></tr>"
+                i_st = itm.get('item_status', 'Pending Audit')
+                
+                price_disp = f"₦{i_price:,.2f}" if i_price > 0 else "Pending"
+                total_disp = f"₦{i_total:,.2f}" if i_total > 0 else "Pending"
+                
+                status_color = "#2e7d32" if "Available" in i_st and "Unavailable" not in i_st else ("#c62828" if "Unavailable" in i_st else "#f57c00")
+                
+                receipt_html += f"<tr style='border-bottom: 1px solid #eee;'><td>{i_name}</td><td>{i_qty}</td><td>{price_disp}</td><td>{total_disp}</td><td style='color:{status_color}; font-weight:bold;'>{i_st}</td></tr>"
             
-            tot_str = f"₦{active_rec.get('grand_total', 0.0):,.2f}" if active_rec.get('grand_total', 0.0) > 0 else "Pending Audit"
+            tot_str = f"₦{active_rec.get('grand_total', 0.0):,.2f}" if active_rec.get('grand_total', 0.0) > 0 else "Pending Price Audit"
             receipt_html += f"""
                 </table>
                 <hr>
                 <h3 style="text-align: right; color: #1565c0;">Total: {tot_str}</h3>
-                <p style="text-align: center; font-size: 0.85rem; margin-top: 20px;">Thank you for shopping with Sammyreks Business Center!<br><i>This portfolio automatically updates from Initial Request log to Audited Quote and final Delivery Receipt.</i></p>
+                <p style="text-align: center; font-size: 0.85rem; margin-top: 20px;">Thank you for shopping with Sammyreks Business Center!<br><i>This portfolio automatically updates item-by-item prices and availability status.</i></p>
             </div>
             """
             st.markdown(receipt_html, unsafe_allow_html=True)
 
-            if "Quoted - Available" in c_st and order_batch_ids:
+            if available_order_ids:
                 st.markdown("---")
-                if st.button("🚀 Confirm & Place Final Order for Available Items", use_container_width=True):
-                    for oid in order_batch_ids:
+                if st.button("🚀 Confirm & Place Final Order for Available Items Only", use_container_width=True):
+                    for oid in available_order_ids:
                         supabase.table("orders").update({"status": "Order Placed & Confirmed"}).eq("id", oid).execute()
-                    st.success("✅ Order confirmed! Admin will now prepare your delivery.")
+                    st.success("✅ Order confirmed for available items! We are preparing your delivery.")
                     st.rerun()
 
             st.success("💡 Every new order or custom request automatically updates and replaces this portfolio receipt view!")
@@ -1033,7 +1114,8 @@ else:
                                 supabase.table("orders").insert(order_payload).execute()
                                 receipt_items.append({
                                     "name": item['name'], "unit": item['unit'], 
-                                    "qty": item['qty'], "price": item['unit_price'], "total": item['total_price']
+                                    "qty": item['qty'], "price": item['unit_price'], "total": item['total_price'],
+                                    "item_status": "Available"
                                 })
                             
                             st.session_state.last_receipt = {
@@ -1136,4 +1218,4 @@ else:
         else:
             st.warning("No products available in stock yet.")
 
-st.sidebar.caption(f"{store_title} v9.6 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v9.7 | {date.today().year}")
