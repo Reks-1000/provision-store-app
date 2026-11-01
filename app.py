@@ -473,37 +473,63 @@ if view_mode == "STAFF":
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
 
-    # TAB 3: ORDER LOG (Consolidated per Customer & Timestamp)
+    # TAB 3: ORDER LOG (Consolidated per Customer & Timestamp with Easy Selection)
     with tabs[3]:
         st.header("📋 Consolidated Customer Orders")
         df_order_list = fetch_dataframe("orders")
+        
         if not df_order_list.empty:
-            # Group orders by customer, phone, date/timestamp
-            if 'customer' in df_order_list.columns and 'contact_phone' in df_order_list.columns and 'timestamp' in df_order_list.columns:
-                grouped_orders = []
-                for (cust, phone, ts, status, date_val), group in df_order_list.groupby(['customer', 'contact_phone', 'timestamp', 'status', 'date']):
-                    combined_items = ", ".join(group['item'].tolist())
-                    total_sum = group['total_price'].sum()
-                    grouped_orders.append({
-                        "Customer Name": cust,
-                        "Phone Number": phone,
-                        "Ordered Items": combined_items,
-                        "Total Amount (₦)": total_sum,
-                        "Status": status,
-                        "Date": date_val,
-                        "Timestamp": ts
-                    })
-                df_grouped = pd.DataFrame(grouped_orders)
-                st.dataframe(df_grouped.sort_values('Timestamp', ascending=False), use_container_width=True, hide_index=True)
-            else:
-                st.dataframe(df_order_list.sort_values('timestamp', ascending=False), use_container_width=True, hide_index=True)
+            # Prepare data for grouped display
+            grouped_orders = []
+            for (cust, phone, ts, status, date_val), group in df_order_list.groupby(['customer', 'contact_phone', 'timestamp', 'status', 'date']):
+                combined_items = ", ".join(group['item'].astype(str).tolist())
+                order_ids = ", ".join(group['id'].astype(str).tolist()) if 'id' in group.columns else "N/A"
+                total_sum = group['total_price'].sum() if 'total_price' in group.columns else 0.0
+                grouped_orders.append({
+                    "Order ID(s)": order_ids,
+                    "Customer Name": cust,
+                    "Phone Number": phone,
+                    "Ordered Items": combined_items,
+                    "Total Amount (₦)": total_sum,
+                    "Status": status,
+                    "Date": date_val,
+                    "Timestamp": ts
+                })
+            df_grouped = pd.DataFrame(grouped_orders)
+            st.dataframe(df_grouped.sort_values('Timestamp', ascending=False), use_container_width=True, hide_index=True)
+            
+            st.divider()
 
-        with st.expander("Update Order Status"):
-            ord_id = st.number_input("Order ID", min_value=1, step=1)
-            new_st = st.selectbox("Status", ["Pending", "In Progress", "Ready", "Delivered", "Cancelled"])
-            if st.button("Update Status Now"):
-                supabase.table("orders").update({"status": new_st}).eq("id", ord_id).execute()
-                st.rerun()
+            # Easy Select & Cancel / Status Update Box
+            with st.expander("✏️ Select Order to Update or Cancel Status", expanded=True):
+                # Build clear display options for the selector
+                order_options = {}
+                for _, row in df_order_list.iterrows():
+                    o_id = int(row['id'])
+                    o_cust = row.get('customer', 'Unknown')
+                    o_item = row.get('item', 'Item')
+                    o_status = row.get('status', 'Pending')
+                    label = f"Order #{o_id} — {o_cust} | {o_item} (Current: {o_status})"
+                    order_options[label] = o_id
+
+                selected_label = st.selectbox("Select Customer Order", list(order_options.keys()))
+                target_order_id = order_options[selected_label]
+                
+                new_st = st.selectbox("Update Status To:", ["Cancelled", "Pending", "In Progress", "Ready", "Delivered"])
+                
+                col_up1, col_up2 = st.columns(2)
+                with col_up1:
+                    if st.button("🔄 Apply Status Change", use_container_width=True):
+                        supabase.table("orders").update({"status": new_st}).eq("id", target_order_id).execute()
+                        st.success(f"Order #{target_order_id} updated to '{new_st}'!")
+                        st.rerun()
+                with col_up2:
+                    if st.button("❌ Quick Cancel Order", use_container_width=True):
+                        supabase.table("orders").update({"status": "Cancelled"}).eq("id", target_order_id).execute()
+                        st.warning(f"Order #{target_order_id} has been marked as Cancelled!")
+                        st.rerun()
+        else:
+            st.info("No customer orders found yet.")
 
     # TAB 4: CUSTOMER CHATS
     with tabs[4]:
