@@ -102,19 +102,25 @@ def sanitize_payload(payload):
 # ==========================================
 st.set_page_config(page_title="Sammyreks Business Center", layout="wide", page_icon="🏢")
 
-# Custom CSS for Large Mobile Touch Targets
+# Custom Responsive Styling for Mobile Devices
 st.markdown("""
     <style>
         .stButton>button {
             font-size: 1.15rem !important;
             font-weight: bold !important;
-            padding: 12px 20px !important;
+            padding: 12px 16px !important;
             border-radius: 10px !important;
+            margin-bottom: 5px !important;
         }
         div[data-baseweb="tab"] {
             font-size: 1.25rem !important;
             font-weight: bold !important;
             padding: 12px 18px !important;
+        }
+        .receipt-scroll-container {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -133,6 +139,12 @@ if 'request_items_temp' not in st.session_state:
 
 if 'cust_active_page' not in st.session_state:
     st.session_state.cust_active_page = "🛒 Shop & Cart"
+
+if 'active_cust_phone' not in st.session_state:
+    st.session_state.active_cust_phone = ""
+
+if 'active_cust_name' not in st.session_state:
+    st.session_state.active_cust_name = ""
 
 store_title = "Sammyreks Business Center"
 
@@ -892,20 +904,23 @@ else:
                 st.markdown(f"### Grand Total: ₦{cart_total:,.2f}")
                 
                 with st.form("checkout_cart_form"):
-                    c_name_cart = st.text_input("Your Full Name")
-                    c_phone_cart = st.text_input("Your Phone Number")
+                    c_name_cart = st.text_input("Your Full Name", value=st.session_state.active_cust_name)
+                    c_phone_cart = st.text_input("Your Phone Number", value=st.session_state.active_cust_phone)
                     checkout_btn = st.form_submit_button("🚀 Checkout & Generate Receipt")
                     
                     if checkout_btn:
                         if c_name_cart.strip() and c_phone_cart.strip():
+                            st.session_state.active_cust_name = c_name_cart.strip()
+                            st.session_state.active_cust_phone = c_phone_cart.strip()
+
                             receipt_items = []
                             for item in st.session_state.cart:
                                 order_payload = {
-                                    "customer": c_name_cart,
+                                    "customer": c_name_cart.strip(),
                                     "item": f"{item['name']} ({item['unit']})",
                                     "qty": int(item['qty']),
                                     "status": "Pending",
-                                    "contact_phone": c_phone_cart,
+                                    "contact_phone": c_phone_cart.strip(),
                                     "total_price": float(item['total_price']),
                                     "date": date.today().isoformat(),
                                     "timestamp": get_now()
@@ -919,8 +934,8 @@ else:
                             
                             st.session_state.last_receipt = {
                                 "type": "Initial Customer Order Receipt", 
-                                "customer": c_name_cart,
-                                "phone": c_phone_cart, 
+                                "customer": c_name_cart.strip(),
+                                "phone": c_phone_cart.strip(), 
                                 "date": get_now(),
                                 "sold_items": receipt_items, 
                                 "grand_total": cart_total, 
@@ -1023,8 +1038,8 @@ else:
         st.subheader("📝 Multi-Item Special Request")
         st.caption("Enter each item name and quantity separately below:")
         
-        cust_n = st.text_input("Your Full Name", key="req_name_input")
-        cust_p = st.text_input("Your Phone Number", key="req_phone_input")
+        cust_n = st.text_input("Your Full Name", value=st.session_state.active_cust_name, key="req_name_input")
+        cust_p = st.text_input("Your Phone Number", value=st.session_state.active_cust_phone, key="req_phone_input")
         
         st.markdown("---")
         st.markdown("#### 🛒 Requested Items List")
@@ -1050,6 +1065,9 @@ else:
         st.markdown("---")
         if st.button("🚀 Submit Multi-Item Special Request Batch", use_container_width=True):
             if cust_n.strip() and cust_p.strip():
+                st.session_state.active_cust_name = cust_n.strip()
+                st.session_state.active_cust_phone = cust_p.strip()
+
                 valid_entries = [e for e in st.session_state.request_items_temp if e['item'].strip()]
                 if valid_entries:
                     batch_timestamp = get_now()
@@ -1096,10 +1114,11 @@ else:
     # PAGE 3: TRACK ORDER
     elif st.session_state.cust_active_page == "🔍 Track Order":
         st.subheader("🔍 Track Order Status")
-        track_phone = st.text_input("Enter your Phone Number to check status")
-        if track_phone:
+        track_phone = st.text_input("Enter your Phone Number to check status", value=st.session_state.active_cust_phone)
+        if track_phone.strip():
+            st.session_state.active_cust_phone = track_phone.strip()
             try:
-                res_track = supabase.table("orders").select("item, qty, status, total_price, date").eq("contact_phone", track_phone).execute()
+                res_track = supabase.table("orders").select("item, qty, status, total_price, date").eq("contact_phone", track_phone.strip()).execute()
                 if res_track.data:
                     st.dataframe(pd.DataFrame(res_track.data), use_container_width=True, hide_index=True)
                 else:
@@ -1110,9 +1129,10 @@ else:
     # PAGE 4: SUPPORT CHAT
     elif st.session_state.cust_active_page == "💬 Chat with Us":
         st.subheader("💬 Support Chat")
-        c_phone_chat = st.text_input("Enter your Phone Number to start chatting", key="cust_chat_phone")
+        c_phone_chat = st.text_input("Enter your Phone Number to start chatting", value=st.session_state.active_cust_phone, key="cust_chat_phone")
         
         if c_phone_chat.strip():
+            st.session_state.active_cust_phone = c_phone_chat.strip()
             try:
                 chat_res = supabase.table("messages").select("*").eq("customer_phone", c_phone_chat.strip()).order("id").execute()
                 if chat_res.data:
@@ -1143,12 +1163,13 @@ else:
     # PAGE 5: RECEIPT PORTFOLIO
     elif st.session_state.cust_active_page == "🧾 Receipt Portfolio":
         st.subheader("🧾 Receipt Portfolio & Active Status")
-        lookup_phone = st.text_input("Enter your Phone Number to load your Portfolio Receipt")
+        lookup_phone = st.text_input("Enter your Phone Number to load your Portfolio Receipt", value=st.session_state.active_cust_phone)
         
         active_rec = None
         available_order_ids = []
         
         if lookup_phone.strip():
+            st.session_state.active_cust_phone = lookup_phone.strip()
             try:
                 cust_orders_res = supabase.table("orders").select("*").eq("contact_phone", lookup_phone.strip()).order("id", desc=True).execute()
                 if cust_orders_res.data:
@@ -1209,15 +1230,16 @@ else:
             sold_items_list = active_rec.get('sold_items', [])
             
             receipt_html = f"""
-            <div id="receipt-box" style="background: #ffffff; color: #000; padding: 22px; border-radius: 12px; border: 3px solid #1565c0; font-family: monospace; max-width: 650px; margin: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
+            <div id="receipt-box" style="background: #ffffff; color: #000; padding: 18px; border-radius: 12px; border: 3px solid #1565c0; font-family: monospace; max-width: 650px; margin: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
                 <h2 style="text-align: center; margin: 0; color: #1565c0;">🏢 {store_title}</h2>
                 <p style="text-align: center; font-size: 0.95rem; margin: 5px 0;"><b>{rec_type}</b></p>
                 <hr>
                 <p><b>Customer Name:</b> {active_rec.get('customer', 'Customer')}</p>
                 <p><b>Phone Number:</b> {active_rec.get('phone', 'N/A')}</p>
                 <hr>
-                <table style="width: 100%; text-align: left; border-collapse: collapse;">
-                    <tr style="border-bottom: 1px solid #ddd;"><th>Item Description</th><th>Qty</th><th>Price</th><th>Total</th><th>Stock Status</th></tr>
+                <div class="receipt-scroll-container">
+                    <table style="width: 100%; text-align: left; border-collapse: collapse; min-width: 480px;">
+                        <tr style="border-bottom: 1px solid #ddd;"><th>Item Description</th><th>Qty</th><th>Price</th><th>Total</th><th>Stock Status</th></tr>
             """
             for itm in sold_items_list:
                 i_name = itm.get('name', 'Item')
@@ -1235,7 +1257,8 @@ else:
             
             tot_str = f"₦{active_rec.get('grand_total', 0.0):,.2f}" if active_rec.get('grand_total', 0.0) > 0 else "Pending Price Audit"
             receipt_html += f"""
-                </table>
+                    </table>
+                </div>
                 <hr>
                 <h3 style="text-align: right; color: #1565c0;">Total: {tot_str}</h3>
                 <p style="text-align: center; font-size: 0.85rem; margin-top: 20px;">Thank you for shopping with Sammyreks Business Center!<br><i>This portfolio automatically updates item-by-item prices and availability status.</i></p>
@@ -1255,4 +1278,4 @@ else:
         else:
             st.info("Enter your phone number above or submit a request to load your active order portfolio receipt.")
 
-st.sidebar.caption(f"{store_title} v10.0 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v10.1 | {date.today().year}")
