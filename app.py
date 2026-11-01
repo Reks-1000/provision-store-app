@@ -102,6 +102,23 @@ def sanitize_payload(payload):
 # ==========================================
 st.set_page_config(page_title="Sammyreks Business Center", layout="wide", page_icon="🏢")
 
+# Custom CSS for Large Mobile Touch Targets
+st.markdown("""
+    <style>
+        .stButton>button {
+            font-size: 1.15rem !important;
+            font-weight: bold !important;
+            padding: 12px 20px !important;
+            border-radius: 10px !important;
+        }
+        div[data-baseweb="tab"] {
+            font-size: 1.25rem !important;
+            font-weight: bold !important;
+            padding: 12px 18px !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 if 'auth' not in st.session_state:
     st.session_state.auth = {"logged_in": False, "user": None, "role": None}
 
@@ -113,6 +130,9 @@ if 'last_receipt' not in st.session_state:
 
 if 'request_items_temp' not in st.session_state:
     st.session_state.request_items_temp = [{"item": "", "qty": 1}]
+
+if 'cust_active_page' not in st.session_state:
+    st.session_state.cust_active_page = "🛒 Shop & Cart"
 
 store_title = "Sammyreks Business Center"
 
@@ -487,12 +507,11 @@ if view_mode == "STAFF":
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
 
-    # TAB 3: ORDERS & MULTI-ITEM SPECIAL REQUESTS AUDIT
+    # TAB 3: ORDERS & SPECIAL REQUESTS AUDIT
     with tabs[3]:
         st.header("📋 Consolidated Customer Orders & Multi-Item Custom Requests")
         df_order_list = fetch_dataframe("orders")
         
-        # 1. MULTI-ITEM SPECIAL REQUESTS INDIVIDUAL AUDIT SECTION
         st.subheader("✍️ Audit Individual Items in Special Requests")
         if not df_order_list.empty and 'item' in df_order_list.columns:
             df_requests = df_order_list[df_order_list['item'].str.startswith("SPECIAL:", na=False)]
@@ -551,7 +570,6 @@ if view_mode == "STAFF":
 
         st.divider()
 
-        # 2. GENERAL ORDERS MANAGEMENT
         st.subheader("📦 All Orders Log & Status Control")
         if not df_order_list.empty:
             grouped_orders = []
@@ -796,7 +814,7 @@ if view_mode == "STAFF":
                         st.success("Password reset successfully.")
 
 # ==========================================
-# 5. CUSTOMER PORTAL
+# 5. MOBILE-FRIENDLY CUSTOMER PORTAL
 # ==========================================
 else:
     # 1. NOTICE BOARD
@@ -806,7 +824,7 @@ else:
             notice_text = notice_res.data[0]['value'].strip()
             if notice_text:
                 st.markdown(f"""
-                    <div style="background: #1565c0; padding: 12px 18px; border-radius: 8px; color: #ffffff; font-weight: bold; text-align: center; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <div style="background: #1565c0; padding: 14px 20px; border-radius: 10px; color: #ffffff; font-weight: bold; text-align: center; margin-bottom: 15px; font-size: 1.1rem; box-shadow: 0 2px 5px rgba(0,0,0,0.15);">
                         📢 {notice_text}
                     </div>
                 """, unsafe_allow_html=True)
@@ -825,32 +843,191 @@ else:
 
     # 3. GREEN WELCOME BANNER
     st.markdown(f"""
-        <div style="background: linear-gradient(135deg, #1565c0, #0d47a1); padding: 25px; border-radius: 12px; color: white; text-align: center; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(21,101,192,0.3);">
-            <h1 style="margin: 0; font-size: 2.2rem;">🏢 Welcome to {store_title}</h1>
-            <p style="margin: 8px 0 0 0; font-size: 1.1rem; opacity: 0.9;">Your trusted plug for raw food, beverages, books, and premium provisions!</p>
+        <div style="background: linear-gradient(135deg, #1565c0, #0d47a1); padding: 22px; border-radius: 14px; color: white; text-align: center; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(21,101,192,0.35);">
+            <h1 style="margin: 0; font-size: 2.1rem;">🏢 Welcome to {store_title}</h1>
+            <p style="margin: 6px 0 0 0; font-size: 1.05rem; opacity: 0.95;">Your trusted plug for raw food, beverages, books, and premium provisions!</p>
         </div>
     """, unsafe_allow_html=True)
 
-    c_tab1, c_tab2, c_tab3, c_tab4, c_tab5 = st.tabs([
-        "🛒 [ 🛍️ ]  Shop & Cart", 
-        "📝 [ ✍️ ]  Multi-Item Special Request", 
-        "🔍 [ 📦 ]  Track My Order", 
-        "💬 [ 💬 ]  Chat with Us", 
-        "🧾 [ 📄 ]  Customer Receipt Portfolio"
-    ])
-    
+    # 4. ALWAYS-VISIBLE PROMINENT MOBILE ICON GRID NAVIGATION
+    st.markdown("### 📱 Quick Navigation (Tap below)")
+    c_grid1, c_grid2 = st.columns(2)
+    with c_grid1:
+        if st.button("🛒 Shop Products & Cart", use_container_width=True):
+            st.session_state.cust_active_page = "🛒 Shop & Cart"
+            st.rerun()
+        if st.button("🔍 Track Order Status", use_container_width=True):
+            st.session_state.cust_active_page = "🔍 Track Order"
+            st.rerun()
+        if st.button("💬 Support Chat", use_container_width=True):
+            st.session_state.cust_active_page = "💬 Chat with Us"
+            st.rerun()
+
+    with c_grid2:
+        if st.button("📝 Multi-Item Request", use_container_width=True):
+            st.session_state.cust_active_page = "📝 Multi-Item Special Request"
+            st.rerun()
+        if st.button("🧾 Receipt Portfolio", use_container_width=True):
+            st.session_state.cust_active_page = "🧾 Receipt Portfolio"
+            st.rerun()
+
+    st.markdown("---")
+
     cart_count = len(st.session_state.cart)
     cart_total = sum([item['total_price'] for item in st.session_state.cart])
 
-    # MULTI-ITEM SPECIAL REQUEST TAB (STRUCTURED ROWS)
-    with c_tab2:
-        st.subheader("Can't find what you need? Add each item on its own row below!")
+    # PAGE 1: SHOP & CART
+    if st.session_state.cust_active_page == "🛒 Shop & Cart":
+        st.markdown(f"""
+            <div style="background: #e3f2fd; padding: 16px; border-radius: 10px; border: 1px solid #90caf9; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; font-size: 1.1rem;">
+                <div>🛒 <b>Shopping Cart:</b> {cart_count} product(s)</div>
+                <div><b>Total:</b> ₦{cart_total:,.2f}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        if cart_count > 0:
+            with st.expander("🛍️ View Cart & Checkout All Items", expanded=True):
+                cart_df = pd.DataFrame(st.session_state.cart)
+                st.dataframe(cart_df[['name', 'unit', 'qty', 'total_price']], use_container_width=True, hide_index=True)
+                st.markdown(f"### Grand Total: ₦{cart_total:,.2f}")
+                
+                with st.form("checkout_cart_form"):
+                    c_name_cart = st.text_input("Your Full Name")
+                    c_phone_cart = st.text_input("Your Phone Number")
+                    checkout_btn = st.form_submit_button("🚀 Checkout & Generate Receipt")
+                    
+                    if checkout_btn:
+                        if c_name_cart.strip() and c_phone_cart.strip():
+                            receipt_items = []
+                            for item in st.session_state.cart:
+                                order_payload = {
+                                    "customer": c_name_cart,
+                                    "item": f"{item['name']} ({item['unit']})",
+                                    "qty": int(item['qty']),
+                                    "status": "Pending",
+                                    "contact_phone": c_phone_cart,
+                                    "total_price": float(item['total_price']),
+                                    "date": date.today().isoformat(),
+                                    "timestamp": get_now()
+                                }
+                                supabase.table("orders").insert(order_payload).execute()
+                                receipt_items.append({
+                                    "name": item['name'], "unit": item['unit'], 
+                                    "qty": item['qty'], "price": item['unit_price'], "total": item['total_price'],
+                                    "item_status": "Available"
+                                })
+                            
+                            st.session_state.last_receipt = {
+                                "type": "Initial Customer Order Receipt", 
+                                "customer": c_name_cart,
+                                "phone": c_phone_cart, 
+                                "date": get_now(),
+                                "sold_items": receipt_items, 
+                                "grand_total": cart_total, 
+                                "status": "Pending"
+                            }
+                            st.session_state.cart = []
+                            st.session_state.cust_active_page = "🧾 Receipt Portfolio"
+                            st.success("✅ Order placed successfully! View your initial receipt below.")
+                            st.rerun()
+                        else:
+                            st.error("Please enter both Name and Phone Number.")
+                
+                if st.button("🗑️ Clear Cart"):
+                    st.session_state.cart = []
+                    st.rerun()
+
+        try:
+            res_shop = supabase.table("products").select("*").gt("qty_cartons", 0).execute()
+            df_shop = pd.DataFrame(res_shop.data) if res_shop.data else pd.DataFrame()
+        except Exception:
+            df_shop = pd.DataFrame()
+
+        if not df_shop.empty:
+            if 'category' not in df_shop.columns:
+                df_shop['category'] = 'General'
+
+            categories = ["All Categories"] + sorted(df_shop['category'].dropna().unique().tolist())
+            
+            col_filt1, col_filt2 = st.columns([1, 2])
+            with col_filt1:
+                selected_cat = st.selectbox("📂 Category", categories)
+            with col_filt2:
+                search_query = st.text_input("🔍 Search products...", placeholder="Type product name...")
+
+            if selected_cat != "All Categories":
+                df_shop = df_shop[df_shop['category'] == selected_cat]
+            if search_query:
+                df_shop = df_shop[df_shop['name'].str.contains(search_query, case=False)]
+
+            if not df_shop.empty:
+                st.markdown("---")
+                for index, s_row in df_shop.iterrows():
+                    with st.container():
+                        col_img, col_info, col_order = st.columns([1, 2, 1.5])
+                        with col_img:
+                            img_bytes = display_image_base64(s_row.get('img_data'))
+                            if img_bytes:
+                                st.image(img_bytes, width=180)
+                            else:
+                                st.info("No Image")
+                        with col_info:
+                            st.subheader(s_row['name'])
+                            st.caption(f"📂 Category: **{s_row.get('category', 'General')}** | 📍 Shelf: {s_row.get('shelf', 'N/A')}")
+                            st.write(s_row.get('description', ''))
+                            
+                            has_direct_vid = s_row.get('video_data') and str(s_row['video_data']).strip() not in ["None", "", "nan"]
+                            has_url_vid = s_row.get('video_url') and str(s_row['video_url']).strip() not in ["None", "", "nan"]
+
+                            if has_direct_vid or has_url_vid:
+                                with st.expander("🎥 Watch Video Advert"):
+                                    if has_direct_vid:
+                                        try:
+                                            vid_bytes = base64.b64decode(s_row['video_data'])
+                                            st.video(vid_bytes)
+                                        except Exception:
+                                            st.error("Video file error.")
+                                    elif has_url_vid:
+                                        st.video(s_row['video_url'])
+                                    
+                        with col_order:
+                            m_lbl = s_row.get('unit_main_label', 'Carton') or 'Carton'
+                            p_lbl = s_row.get('unit_pack_label', 'Pack') or 'Pack'
+                            r_lbl = s_row.get('unit_retail_label', 'Retail Unit') or 'Retail Unit'
+
+                            unit_choice = st.selectbox("Select Unit", [r_lbl, p_lbl, m_lbl], key=f"unit_{s_row['id']}")
+                            qty_choice = st.number_input("Qty", min_value=1, key=f"qty_{s_row['id']}")
+                            
+                            price = s_row['price_retail'] if unit_choice == r_lbl else (s_row['price_pack'] if unit_choice == p_lbl else s_row['price_carton'])
+                            total_calc = price * qty_choice
+                            
+                            if st.button(f"➕ Add to Cart — ₦{total_calc:,.2f}", key=f"add_cart_{s_row['id']}", use_container_width=True):
+                                st.session_state.cart.append({
+                                    "product_id": s_row['id'],
+                                    "name": s_row['name'],
+                                    "unit": unit_choice,
+                                    "qty": int(qty_choice),
+                                    "unit_price": float(price),
+                                    "total_price": float(total_calc)
+                                })
+                                st.success(f"Added {qty_choice} {unit_choice}(s) of {s_row['name']} to cart!")
+                                st.rerun()
+                        st.divider()
+            else:
+                st.warning("No products matching filter.")
+        else:
+            st.warning("No products available in stock yet.")
+
+    # PAGE 2: MULTI-ITEM SPECIAL REQUEST
+    elif st.session_state.cust_active_page == "📝 Multi-Item Special Request":
+        st.subheader("📝 Multi-Item Special Request")
+        st.caption("Enter each item name and quantity separately below:")
         
         cust_n = st.text_input("Your Full Name", key="req_name_input")
         cust_p = st.text_input("Your Phone Number", key="req_phone_input")
         
         st.markdown("---")
-        st.markdown("#### 📝 Custom Requested Items List")
+        st.markdown("#### 🛒 Requested Items List")
         
         for idx, entry in enumerate(st.session_state.request_items_temp):
             c_r1, c_r2 = st.columns([3, 1])
@@ -861,12 +1038,12 @@ else:
         
         col_m1, col_m2 = st.columns(2)
         with col_m1:
-            if st.button("➕ Add Another Item Row"):
+            if st.button("➕ Add Item Row", use_container_width=True):
                 st.session_state.request_items_temp.append({"item": "", "qty": 1})
                 st.rerun()
         with col_m2:
             if len(st.session_state.request_items_temp) > 1:
-                if st.button("➖ Remove Last Row"):
+                if st.button("➖ Remove Row", use_container_width=True):
                     st.session_state.request_items_temp.pop()
                     st.rerun()
 
@@ -908,28 +1085,31 @@ else:
                         "status": "Pending Admin Price Audit"
                     }
                     st.session_state.request_items_temp = [{"item": "", "qty": 1}]
-                    st.success("✅ Multi-item request submitted cleanly! The admin will price and audit each item individually. Check your Receipt Portfolio shortly!")
+                    st.session_state.cust_active_page = "🧾 Receipt Portfolio"
+                    st.success("✅ Multi-item request submitted! Admin is auditing prices now.")
                     st.rerun()
                 else:
                     st.error("Please enter at least one valid item name.")
             else:
                 st.error("Please fill in your Name and Phone Number.")
 
-    with c_tab3:
-        st.subheader("Check your order status")
+    # PAGE 3: TRACK ORDER
+    elif st.session_state.cust_active_page == "🔍 Track Order":
+        st.subheader("🔍 Track Order Status")
         track_phone = st.text_input("Enter your Phone Number to check status")
         if track_phone:
             try:
                 res_track = supabase.table("orders").select("item, qty, status, total_price, date").eq("contact_phone", track_phone).execute()
                 if res_track.data:
-                    st.table(pd.DataFrame(res_track.data))
+                    st.dataframe(pd.DataFrame(res_track.data), use_container_width=True, hide_index=True)
                 else:
                     st.info("No orders found for this number.")
             except Exception:
                 pass
 
-    with c_tab4:
-        st.subheader("💬 Direct Support Chat")
+    # PAGE 4: SUPPORT CHAT
+    elif st.session_state.cust_active_page == "💬 Chat with Us":
+        st.subheader("💬 Support Chat")
         c_phone_chat = st.text_input("Enter your Phone Number to start chatting", key="cust_chat_phone")
         
         if c_phone_chat.strip():
@@ -960,9 +1140,9 @@ else:
         else:
             st.warning("Please enter your phone number to load or start a chat thread.")
 
-    with c_tab5:
-        st.subheader("🧾 Customer Order & Request Receipt Portfolio")
-        
+    # PAGE 5: RECEIPT PORTFOLIO
+    elif st.session_state.cust_active_page == "🧾 Receipt Portfolio":
+        st.subheader("🧾 Receipt Portfolio & Active Status")
         lookup_phone = st.text_input("Enter your Phone Number to load your Portfolio Receipt")
         
         active_rec = None
@@ -1029,7 +1209,7 @@ else:
             sold_items_list = active_rec.get('sold_items', [])
             
             receipt_html = f"""
-            <div id="receipt-box" style="background: #ffffff; color: #000; padding: 25px; border-radius: 12px; border: 3px solid #1565c0; font-family: monospace; max-width: 650px; margin: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
+            <div id="receipt-box" style="background: #ffffff; color: #000; padding: 22px; border-radius: 12px; border: 3px solid #1565c0; font-family: monospace; max-width: 650px; margin: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
                 <h2 style="text-align: center; margin: 0; color: #1565c0;">🏢 {store_title}</h2>
                 <p style="text-align: center; font-size: 0.95rem; margin: 5px 0;"><b>{rec_type}</b></p>
                 <hr>
@@ -1075,144 +1255,4 @@ else:
         else:
             st.info("Enter your phone number above or submit a request to load your active order portfolio receipt.")
 
-    with c_tab1:
-        st.markdown(f"""
-            <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; border: 1px solid #90caf9; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <div>🛒 <b>Shopping Cart Items:</b> {cart_count} product(s)</div>
-                <div><b>Total Sum:</b> ₦{cart_total:,.2f}</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-        if cart_count > 0:
-            with st.expander("🛍️ View Cart & Checkout All Items"):
-                cart_df = pd.DataFrame(st.session_state.cart)
-                st.dataframe(cart_df[['name', 'unit', 'qty', 'total_price']], use_container_width=True, hide_index=True)
-                st.markdown(f"#### Grand Total: ₦{cart_total:,.2f}")
-                
-                with st.form("checkout_cart_form"):
-                    c_name_cart = st.text_input("Your Full Name")
-                    c_phone_cart = st.text_input("Your Phone Number")
-                    checkout_btn = st.form_submit_button("🚀 Checkout & Generate Initial Order Receipt")
-                    
-                    if checkout_btn:
-                        if c_name_cart.strip() and c_phone_cart.strip():
-                            receipt_items = []
-                            for item in st.session_state.cart:
-                                order_payload = {
-                                    "customer": c_name_cart,
-                                    "item": f"{item['name']} ({item['unit']})",
-                                    "qty": int(item['qty']),
-                                    "status": "Pending",
-                                    "contact_phone": c_phone_cart,
-                                    "total_price": float(item['total_price']),
-                                    "date": date.today().isoformat(),
-                                    "timestamp": get_now()
-                                }
-                                supabase.table("orders").insert(order_payload).execute()
-                                receipt_items.append({
-                                    "name": item['name'], "unit": item['unit'], 
-                                    "qty": item['qty'], "price": item['unit_price'], "total": item['total_price'],
-                                    "item_status": "Available"
-                                })
-                            
-                            st.session_state.last_receipt = {
-                                "type": "Initial Customer Order Receipt", 
-                                "customer": c_name_cart,
-                                "phone": c_phone_cart, 
-                                "date": get_now(),
-                                "sold_items": receipt_items, 
-                                "grand_total": cart_total, 
-                                "status": "Pending"
-                            }
-                            st.session_state.cart = []
-                            st.success("✅ Order placed successfully! Your Initial Order Receipt is ready in the 'Customer Receipt Portfolio' tab.")
-                            st.rerun()
-                        else:
-                            st.error("Please enter both Name and Phone Number.")
-                
-                if st.button("🗑️ Clear Cart"):
-                    st.session_state.cart = []
-                    st.rerun()
-
-        try:
-            res_shop = supabase.table("products").select("*").gt("qty_cartons", 0).execute()
-            df_shop = pd.DataFrame(res_shop.data) if res_shop.data else pd.DataFrame()
-        except Exception:
-            df_shop = pd.DataFrame()
-
-        if not df_shop.empty:
-            if 'category' not in df_shop.columns:
-                df_shop['category'] = 'General'
-
-            categories = ["All Categories"] + sorted(df_shop['category'].dropna().unique().tolist())
-            
-            col_filt1, col_filt2 = st.columns([1, 2])
-            with col_filt1:
-                selected_cat = st.selectbox("📂 Filter by Category", categories)
-            with col_filt2:
-                search_query = st.text_input("🔍 Search products...", placeholder="Type product name...")
-
-            if selected_cat != "All Categories":
-                df_shop = df_shop[df_shop['category'] == selected_cat]
-            if search_query:
-                df_shop = df_shop[df_shop['name'].str.contains(search_query, case=False)]
-
-            if not df_shop.empty:
-                st.markdown("---")
-                for index, s_row in df_shop.iterrows():
-                    with st.container():
-                        col_img, col_info, col_order = st.columns([1, 2, 1.5])
-                        with col_img:
-                            img_bytes = display_image_base64(s_row.get('img_data'))
-                            if img_bytes:
-                                st.image(img_bytes, width=200)
-                            else:
-                                st.info("No Image")
-                        with col_info:
-                            st.subheader(s_row['name'])
-                            st.caption(f"📂 Category: **{s_row.get('category', 'General')}** | 📍 Shelf: {s_row.get('shelf', 'N/A')}")
-                            st.write(s_row.get('description', ''))
-                            
-                            has_direct_vid = s_row.get('video_data') and str(s_row['video_data']).strip() not in ["None", "", "nan"]
-                            has_url_vid = s_row.get('video_url') and str(s_row['video_url']).strip() not in ["None", "", "nan"]
-
-                            if has_direct_vid or has_url_vid:
-                                with st.expander("🎥 Watch Product Video Advert"):
-                                    if has_direct_vid:
-                                        try:
-                                            vid_bytes = base64.b64decode(s_row['video_data'])
-                                            st.video(vid_bytes)
-                                        except Exception:
-                                            st.error("Video file is corrupted.")
-                                    elif has_url_vid:
-                                        st.video(s_row['video_url'])
-                                    
-                        with col_order:
-                            m_lbl = s_row.get('unit_main_label', 'Carton') or 'Carton'
-                            p_lbl = s_row.get('unit_pack_label', 'Pack') or 'Pack'
-                            r_lbl = s_row.get('unit_retail_label', 'Retail Unit') or 'Retail Unit'
-
-                            unit_choice = st.selectbox("Select Unit", [r_lbl, p_lbl, m_lbl], key=f"unit_{s_row['id']}")
-                            qty_choice = st.number_input("Qty", min_value=1, key=f"qty_{s_row['id']}")
-                            
-                            price = s_row['price_retail'] if unit_choice == r_lbl else (s_row['price_pack'] if unit_choice == p_lbl else s_row['price_carton'])
-                            total_calc = price * qty_choice
-                            
-                            if st.button(f"➕ Add to Cart - ₦{total_calc:,.2f}", key=f"add_cart_{s_row['id']}"):
-                                st.session_state.cart.append({
-                                    "product_id": s_row['id'],
-                                    "name": s_row['name'],
-                                    "unit": unit_choice,
-                                    "qty": int(qty_choice),
-                                    "unit_price": float(price),
-                                    "total_price": float(total_calc)
-                                })
-                                st.success(f"Added {qty_choice} {unit_choice}(s) of {s_row['name']} to cart!")
-                                st.rerun()
-                        st.divider()
-            else:
-                st.warning("No products found matching this category or search.")
-        else:
-            st.warning("No products available in stock yet.")
-
-st.sidebar.caption(f"{store_title} v9.8 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v10.0 | {date.today().year}")
