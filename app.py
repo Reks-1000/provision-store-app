@@ -499,7 +499,6 @@ if view_mode == "STAFF":
             if not df_requests.empty:
                 st.info("Select a customer request below to price and set availability for EACH item individually:")
                 
-                # Group requests by customer phone & timestamp batch
                 request_batches = {}
                 for (cust, phone, ts), group in df_requests.groupby(['customer', 'contact_phone', 'timestamp']):
                     label = f"Batch Request: {cust} ({phone}) — {len(group)} Item(s) [{ts}]"
@@ -797,7 +796,7 @@ if view_mode == "STAFF":
                         st.success("Password reset successfully.")
 
 # ==========================================
-# 5. CUSTOMER PORTAL (MULTI-ITEM SPECIAL REQUEST & AUDITING)
+# 5. CUSTOMER PORTAL
 # ==========================================
 else:
     # 1. NOTICE BOARD
@@ -843,9 +842,9 @@ else:
     cart_count = len(st.session_state.cart)
     cart_total = sum([item['total_price'] for item in st.session_state.cart])
 
-    # MULTI-ITEM SPECIAL REQUEST TAB
+    # MULTI-ITEM SPECIAL REQUEST TAB (STRUCTURED ROWS)
     with c_tab2:
-        st.subheader("Can't find what you need? Add multiple custom items below!")
+        st.subheader("Can't find what you need? Add each item on its own row below!")
         
         cust_n = st.text_input("Your Full Name", key="req_name_input")
         cust_p = st.text_input("Your Phone Number", key="req_phone_input")
@@ -853,22 +852,21 @@ else:
         st.markdown("---")
         st.markdown("#### 📝 Custom Requested Items List")
         
-        # Add dynamic item entries
         for idx, entry in enumerate(st.session_state.request_items_temp):
             c_r1, c_r2 = st.columns([3, 1])
             with c_r1:
-                entry['item'] = st.text_input(f"Item #{idx+1} Description", value=entry['item'], key=f"req_item_{idx}")
+                entry['item'] = st.text_input(f"Item #{idx+1} Name", value=entry['item'], key=f"req_item_{idx}")
             with c_r2:
                 entry['qty'] = st.number_input(f"Qty", min_value=1, value=entry['qty'], key=f"req_qty_{idx}")
         
         col_m1, col_m2 = st.columns(2)
         with col_m1:
-            if st.button("➕ Add Another Item to Request"):
+            if st.button("➕ Add Another Item Row"):
                 st.session_state.request_items_temp.append({"item": "", "qty": 1})
                 st.rerun()
         with col_m2:
             if len(st.session_state.request_items_temp) > 1:
-                if st.button("➖ Remove Last Item"):
+                if st.button("➖ Remove Last Row"):
                     st.session_state.request_items_temp.pop()
                     st.rerun()
 
@@ -897,7 +895,7 @@ else:
                             "qty": int(e['qty']),
                             "price": 0.0,
                             "total": 0.0,
-                            "status": "Pending Price Audit"
+                            "item_status": "Pending Price Audit"
                         })
                     
                     st.session_state.last_receipt = {
@@ -910,10 +908,10 @@ else:
                         "status": "Pending Admin Price Audit"
                     }
                     st.session_state.request_items_temp = [{"item": "", "qty": 1}]
-                    st.success("✅ Multi-item request batch submitted! The admin is auditing unit prices and availability. Check your Receipt Portfolio shortly!")
+                    st.success("✅ Multi-item request submitted cleanly! The admin will price and audit each item individually. Check your Receipt Portfolio shortly!")
                     st.rerun()
                 else:
-                    st.error("Please enter at least one item description.")
+                    st.error("Please enter at least one valid item name.")
             else:
                 st.error("Please fill in your Name and Phone Number.")
 
@@ -962,7 +960,6 @@ else:
         else:
             st.warning("Please enter your phone number to load or start a chat thread.")
 
-    # CUSTOMER RECEIPT PORTFOLIO (WITH ITEM-BY-ITEM AVAILABILITY & INDIVIDUAL SELECTION)
     with c_tab5:
         st.subheader("🧾 Customer Order & Request Receipt Portfolio")
         
@@ -1218,4 +1215,4 @@ else:
         else:
             st.warning("No products available in stock yet.")
 
-st.sidebar.caption(f"{store_title} v9.7 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v9.8 | {date.today().year}")
