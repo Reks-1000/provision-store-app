@@ -76,7 +76,7 @@ def get_file_base64(uploaded_file):
     if uploaded_file is not None:
         try:
             return base64.b64encode(uploaded_file.read()).decode()
-        except Exception as e:
+        except Exception:
             return None
     return None
 
@@ -241,7 +241,6 @@ if view_mode == "STAFF":
                         new_qty = float(p['qty_cartons'] - cartons_deducted)
                         supabase.table("products").update({"qty_cartons": new_qty}).eq("id", int(p['id'])).execute()
                             
-                        # Comprehensive Staff Audit Receipt (Successful, Available & Unavailable check)
                         st.session_state.last_receipt = {
                             "type": "Store Sales Audit Receipt (Available & Sold)", 
                             "customer": c_name_pos or "Walk-in Customer",
@@ -285,29 +284,41 @@ if view_mode == "STAFF":
 
         if st.session_state.last_receipt:
             st.markdown("---")
-            st.subheader(f"🧾 {st.session_state.last_receipt['type']}")
             rec = st.session_state.last_receipt
+            rec_type = rec.get('type', 'Official Receipt')
+            st.subheader(f"🧾 {rec_type}")
+            
+            # Safe parsing for items to avoid KeyError
+            sold_items_list = rec.get('sold_items', rec.get('items', []))
+            avail_items = rec.get('available_items', [])
+            unavail_items = rec.get('unavailable_items', [])
+
             st.markdown(f"""
             <div style="background: #ffffff; color: #000; padding: 20px; border-radius: 10px; border: 2px solid #1565c0; font-family: monospace;">
                 <h3 style="text-align: center; margin: 0; color: #1565c0;">🏢 {store_title}</h3>
-                <p style="text-align: center; font-size: 0.9rem; margin: 5px 0;">{rec['type']}</p>
+                <p style="text-align: center; font-size: 0.9rem; margin: 5px 0;">{rec_type}</p>
                 <hr>
-                <p><b>Customer:</b> {rec['customer']} | <b>Phone:</b> {rec['phone']}</p>
-                <p><b>Date/Time:</b> {rec['date']} | <b>Staff:</b> {rec['cashier']}</p>
+                <p><b>Customer:</b> {rec.get('customer', 'Customer')} | <b>Phone:</b> {rec.get('phone', 'N/A')}</p>
+                <p><b>Date/Time:</b> {rec.get('date', '')} | <b>Staff:</b> {rec.get('cashier', 'Staff')}</p>
                 <hr>
                 <h4 style="color: #1565c0; margin-bottom: 5px;">✅ Successfully Sold & Dispensed Products:</h4>
                 <table style="width: 100%; text-align: left;">
                     <tr><th>Item</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr>
             """, unsafe_allow_html=True)
-            for itm in rec['sold_items']:
-                st.markdown(f"<tr><td>{itm['name']} ({itm['unit']})</td><td>{itm['qty']}</td><td>₦{itm['price']:,.2f}</td><td>₦{itm['total']:,.2f}</td></tr>", unsafe_allow_html=True)
+            for itm in sold_items_list:
+                i_name = itm.get('name', 'Item')
+                i_unit = itm.get('unit', 'Unit')
+                i_qty = itm.get('qty', 1)
+                i_price = itm.get('price', 0.0)
+                i_total = itm.get('total', 0.0)
+                st.markdown(f"<tr><td>{i_name} ({i_unit})</td><td>{i_qty}</td><td>₦{i_price:,.2f}</td><td>₦{i_total:,.2f}</td></tr>", unsafe_allow_html=True)
             st.markdown(f"""
                 </table>
                 <br>
-                <p><b>📦 Available In Stock Verified:</b> {', '.join(rec['available_items']) if rec['available_items'] else 'None'}</p>
-                <p><b>❌ Unavailable / Out of Stock:</b> {', '.join(rec['unavailable_items']) if rec['unavailable_items'] else 'None'}</p>
+                <p><b>📦 Available In Stock Verified:</b> {', '.join(avail_items) if avail_items else 'All Items'}</p>
+                <p><b>❌ Unavailable / Out of Stock:</b> {', '.join(unavail_items) if unavail_items else 'None'}</p>
                 <hr>
-                <h3 style="text-align: right; color: #1565c0;">Grand Total Paid: ₦{rec['grand_total']:,.2f}</h3>
+                <h3 style="text-align: right; color: #1565c0;">Grand Total Paid: ₦{rec.get('grand_total', 0.0):,.2f}</h3>
             </div>
             """, unsafe_allow_html=True)
             if st.button("❌ Close Receipt View"):
@@ -482,7 +493,7 @@ if view_mode == "STAFF":
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
 
-    # TAB 3: ORDER LOG (Consolidated Selection & Quick Cancellation Check)
+    # TAB 3: ORDER LOG
     with tabs[3]:
         st.header("📋 Consolidated Customer Orders")
         df_order_list = fetch_dataframe("orders")
@@ -531,7 +542,6 @@ if view_mode == "STAFF":
                         st.rerun()
                 with col_up2:
                     if st.button("❌ Quick Cancel (No Receipt Generated)", use_container_width=True):
-                        # When cancelled, status becomes Cancelled and NO receipt is generated
                         supabase.table("orders").update({"status": "Cancelled"}).eq("id", target_order_id).execute()
                         st.warning(f"Order #{target_order_id} has been Cancelled. No receipt generated.")
                         st.rerun()
@@ -731,7 +741,7 @@ if view_mode == "STAFF":
                         st.success("Password reset successfully.")
 
 # ==========================================
-# 5. CUSTOMER PORTAL (CONSOLIDATED SHAREABLE RECEIPT)
+# 5. CUSTOMER PORTAL
 # ==========================================
 else:
     # 1. NOTICE BOARD
@@ -845,26 +855,33 @@ else:
         st.subheader("🧾 Shareable Customer Order & Paid Receipt")
         if st.session_state.last_receipt:
             rec = st.session_state.last_receipt
-            # Shareable container
+            rec_type = rec.get('type', 'Consolidated Paid Receipt')
+            sold_items_list = rec.get('sold_items', rec.get('items', []))
+            
             receipt_html = f"""
             <div id="receipt-box" style="background: #ffffff; color: #000; padding: 25px; border-radius: 12px; border: 3px solid #1565c0; font-family: monospace; max-width: 600px; margin: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
                 <h2 style="text-align: center; margin: 0; color: #1565c0;">🏢 {store_title}</h2>
-                <p style="text-align: center; font-size: 0.95rem; margin: 5px 0;"><b>Official Shareable Customer Receipt</b></p>
+                <p style="text-align: center; font-size: 0.95rem; margin: 5px 0;"><b>{rec_type}</b></p>
                 <hr>
-                <p><b>Customer Name:</b> {rec['customer']}</p>
-                <p><b>Phone Number:</b> {rec['phone']}</p>
-                <p><b>Date & Time:</b> {rec['date']}</p>
+                <p><b>Customer Name:</b> {rec.get('customer', 'Customer')}</p>
+                <p><b>Phone Number:</b> {rec.get('phone', 'N/A')}</p>
+                <p><b>Date & Time:</b> {rec.get('date', '')}</p>
                 <hr>
                 <table style="width: 100%; text-align: left; border-collapse: collapse;">
                     <tr style="border-bottom: 1px solid #ddd;"><th>Item Description</th><th>Qty</th><th>Price</th><th>Total</th></tr>
             """
-            for itm in rec['sold_items']:
-                receipt_html += f"<tr style='border-bottom: 1px solid #eee;'><td>{itm['name']} ({itm['unit']})</td><td>{itm['qty']}</td><td>₦{itm['price']:,.2f}</td><td>₦{itm['total']:,.2f}</td></tr>"
+            for itm in sold_items_list:
+                i_name = itm.get('name', 'Item')
+                i_unit = itm.get('unit', 'Unit')
+                i_qty = itm.get('qty', 1)
+                i_price = itm.get('price', 0.0)
+                i_total = itm.get('total', 0.0)
+                receipt_html += f"<tr style='border-bottom: 1px solid #eee;'><td>{i_name} ({i_unit})</td><td>{i_qty}</td><td>₦{i_price:,.2f}</td><td>₦{i_total:,.2f}</td></tr>"
             
             receipt_html += f"""
                 </table>
                 <hr>
-                <h3 style="text-align: right; color: #1565c0;">Total Paid: ₦{rec['grand_total']:,.2f}</h3>
+                <h3 style="text-align: right; color: #1565c0;">Total Paid: ₦{rec.get('grand_total', 0.0):,.2f}</h3>
                 <p style="text-align: center; font-size: 0.85rem; margin-top: 20px;">Thank you for shopping with Sammyreks Business Center!<br><i>This receipt carries all your ordered items and verified successful purchases.</i></p>
             </div>
             """
@@ -914,7 +931,6 @@ else:
                                 })
                                 available_list.append(item['name'])
                             
-                            # Generate Shareable Consolidated Receipt
                             st.session_state.last_receipt = {
                                 "type": "Consolidated Paid Receipt", 
                                 "customer": c_name_cart,
@@ -1017,4 +1033,4 @@ else:
         else:
             st.warning("No products available in stock yet.")
 
-st.sidebar.caption(f"{store_title} v9.3 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v9.4 | {date.today().year}")
