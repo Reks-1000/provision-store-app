@@ -41,11 +41,10 @@ def fetch_dataframe(table_name):
             return pd.DataFrame(response.data)
         return pd.DataFrame()
     except Exception as e:
-        st.error(f"Failed to fetch {table_name}: {e}")
         return pd.DataFrame()
 
 # ==========================================
-# 2. CORE UTILITY FUNCTIONS (HD IMAGES)
+# 2. CORE UTILITY FUNCTIONS (HD IMAGES & RECEIPTS)
 # ==========================================
 def get_image_base64(uploaded_file):
     if uploaded_file is not None:
@@ -61,8 +60,7 @@ def get_image_base64(uploaded_file):
             buffered = BytesIO()
             img.save(buffered, format="JPEG", quality=100, subsampling=0)
             return base64.b64encode(buffered.getvalue()).decode()
-        except Exception as e:
-            st.error(f"Image processing failed: {e}")
+        except Exception:
             return None
     return None
 
@@ -78,8 +76,7 @@ def get_file_base64(uploaded_file):
     if uploaded_file is not None:
         try:
             return base64.b64encode(uploaded_file.read()).decode()
-        except Exception as e:
-            st.error(f"Video file processing failed: {e}")
+        except Exception:
             return None
     return None
 
@@ -108,13 +105,21 @@ st.set_page_config(page_title="Sammyreks Business Center", layout="wide", page_i
 if 'auth' not in st.session_state:
     st.session_state.auth = {"logged_in": False, "user": None, "role": None}
 
+# Initialize shopping cart in session state
+if 'cart' not in st.session_state:
+    st.session_state.cart = []
+
+# Initialize last receipt in session state
+if 'last_receipt' not in st.session_state:
+    st.session_state.last_receipt = None
+
 store_title = "Sammyreks Business Center"
 
 st.sidebar.title("🏢 Sammyreks Portal")
 st.sidebar.markdown("---")
 
 if not st.session_state.auth["logged_in"]:
-    auth_mode = st.sidebar.selectbox("Choose Portal", ["🛍️ Customer Shop", "🔑 Staff/Admin Login"])
+    auth_mode = st.sidebar.selectbox("Choose Portal", ["🛒 Customer Shop", "🔑 Staff/Admin Login"])
     
     if auth_mode == "🔑 Staff/Admin Login":
         with st.sidebar.form("login_form"):
@@ -165,7 +170,7 @@ if view_mode == "STAFF":
 
     # TAB 0: DASHBOARD
     with tabs[0]:
-        st.header("Business Analytics")
+        st.header("📊 Business Analytics")
         df_s = fetch_dataframe("sales")
         df_e = fetch_dataframe("expenses")
         
@@ -184,7 +189,7 @@ if view_mode == "STAFF":
 
     # TAB 1: POS & SALES
     with tabs[1]:
-        st.header("New Sale Transaction")
+        st.header("💳 POS & Sales Counter")
         try:
             res_pos = supabase.table("products").select("*").gt("qty_cartons", 0).execute()
             df_p_pos = pd.DataFrame(res_pos.data) if res_pos.data else pd.DataFrame()
@@ -212,7 +217,7 @@ if view_mode == "STAFF":
                 
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
-                    if st.button("🏁 Cash Sale", use_container_width=True):
+                    if st.button("🏁 Cash Sale & Receipt", use_container_width=True):
                         packs_per_c = p.get('packs_per_carton', 1) or 1
                         units_per_p = p.get('units_per_pack', 1) or 1
                         
@@ -238,7 +243,14 @@ if view_mode == "STAFF":
                         new_qty = float(p['qty_cartons'] - cartons_deducted)
                         supabase.table("products").update({"qty_cartons": new_qty}).eq("id", int(p['id'])).execute()
                             
-                        st.success("Sale Recorded permanently!")
+                        # Generate Receipt
+                        st.session_state.last_receipt = {
+                            "type": "POS Sale", "customer": c_name_pos or "Walk-in Customer",
+                            "phone": c_phone_pos or "N/A", "date": get_now(),
+                            "items": [{"name": sel_item, "unit": sale_unit, "qty": sale_qty, "price": up, "total": grand_total}],
+                            "grand_total": grand_total, "cashier": user_logged
+                        }
+                        st.success("Sale Recorded & Receipt Generated!")
                         st.rerun()
                 
                 with col_btn2:
@@ -267,8 +279,35 @@ if view_mode == "STAFF":
                                 
                             st.warning(f"Debt logged for {c_name_pos}!")
                             st.rerun()
-        else:
-            st.info("No products found in stock.")
+
+        # Display Receipt if generated
+        if st.session_state.last_receipt:
+            st.markdown("---")
+            st.subheader("🧾 Generated Transaction Receipt")
+            rec = st.session_state.last_receipt
+            st.markdown(f"""
+            <div style="background: #ffffff; color: #000; padding: 20px; border-radius: 10px; border: 2px solid #2e7d32; font-family: monospace;">
+                <h3 style="text-align: center; margin: 0; color: #1b5e20;">🏢 {store_title}</h3>
+                <p style="text-align: center; font-size: 0.9rem; margin: 5px 0;">Official Sales Receipt</p>
+                <hr>
+                <p><b>Customer:</b> {rec['customer']} | <b>Phone:</b> {rec['phone']}</p>
+                <p><b>Date/Time:</b> {rec['date']} | <b>Processed By:</b> {rec['cashier']}</p>
+                <hr>
+                <table style="width: 100%; text-align: left;">
+                    <tr><th>Item</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr>
+            """, unsafe_allow_html=True)
+            for itm in rec['items']:
+                st.markdown(f"<tr><td>{itm['name']} ({itm['unit']})</td><td>{itm['qty']}</td><td>₦{itm['price']:,.2f}</td><td>₦{itm['total']:,.2f}</td></tr>", unsafe_allow_html=True)
+            st.markdown(f"""
+                </table>
+                <hr>
+                <h4 style="text-align: right; margin: 0; color: #1b5e20;">Grand Total: ₦{rec['grand_total']:,.2f}</h4>
+                <p style="text-align: center; font-size: 0.8rem; margin-top: 15px;">Thank you for your patronage!</p>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button("❌ Close Receipt View"):
+                st.session_state.last_receipt = None
+                st.rerun()
 
     # TAB 2: INVENTORY CONTROL
     with tabs[2]:
@@ -326,7 +365,6 @@ if view_mode == "STAFF":
         with st.form("inventory_form"):
             st.info("✏️ **Category & Box Headings**: Type any category name of your choice below.")
             
-            # FLEXIBLE TEXT INPUT FOR CATEGORY (Allows typing anything freely without 'No results' error)
             default_cat = str(curr_data.get('category', 'General') or 'General')
             sel_category = st.text_input("Product Category (Type any category e.g. Cosmetics, Drinks, Books, etc.)", value=default_cat).strip().title()
 
@@ -441,7 +479,7 @@ if view_mode == "STAFF":
 
     # TAB 3: ORDER LOG
     with tabs[3]:
-        st.header("Order Log")
+        st.header("📋 Order Log")
         df_order_list = fetch_dataframe("orders")
         if not df_order_list.empty:
             st.dataframe(df_order_list.sort_values('timestamp', ascending=False), use_container_width=True, hide_index=True)
@@ -604,7 +642,7 @@ if view_mode == "STAFF":
     # CEO TABS
     if role == "CEO":
         with tabs[7]:
-            st.header("Expenditure Log")
+            st.header("💸 Expenditure Log")
             df_exp_view = fetch_dataframe("expenses")
             if not df_exp_view.empty:
                 st.dataframe(df_exp_view, use_container_width=True, hide_index=True)
@@ -618,7 +656,7 @@ if view_mode == "STAFF":
                     st.rerun()
 
         with tabs[8]:
-            st.header("Staff Management")
+            st.header("👥 Staff Management")
             df_workers = fetch_dataframe("workers")
             if not df_workers.empty:
                 st.dataframe(df_workers, use_container_width=True, hide_index=True)
@@ -645,7 +683,7 @@ if view_mode == "STAFF":
                         st.success("Password reset successfully.")
 
 # ==========================================
-# 5. CUSTOMER PORTAL
+# 5. CUSTOMER PORTAL (MULTI-ITEM CART & RECEIPT)
 # ==========================================
 else:
     # 1. NOTICE BOARD
@@ -655,8 +693,8 @@ else:
             notice_text = notice_res.data[0]['value'].strip()
             if notice_text:
                 st.markdown(f"""
-                    <div style="background: #ff9800; padding: 12px 18px; border-radius: 8px; color: #000; font-weight: bold; text-align: center; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        📢 {notice_text}
+                    <div style="background: #1565c0; padding: 12px 18px; border-radius: 8px; color: #ffffff; font-weight: bold; text-align: center; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        🌐 {notice_text}
                     </div>
                 """, unsafe_allow_html=True)
     except Exception:
@@ -672,16 +710,20 @@ else:
     except Exception:
         pass
 
-    # 3. GREEN WELCOME BANNER
+    # 3. GREEN WELCOME BANNER (Corporate Blue/Green Accent styling)
     st.markdown(f"""
-        <div style="background: linear-gradient(135deg, #2e7d32, #1b5e20); padding: 25px; border-radius: 12px; color: white; text-align: center; margin-bottom: 25px;">
+        <div style="background: linear-gradient(135deg, #1565c0, #0d47a1); padding: 25px; border-radius: 12px; color: white; text-align: center; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(21,101,192,0.3);">
             <h1 style="margin: 0; font-size: 2.2rem;">🏢 Welcome to {store_title}</h1>
             <p style="margin: 8px 0 0 0; font-size: 1.1rem; opacity: 0.9;">Your trusted plug for raw food, beverages, books, and premium provisions!</p>
         </div>
     """, unsafe_allow_html=True)
 
-    c_tab1, c_tab2, c_tab3, c_tab4 = st.tabs(["🛍️ Shop by Category", "📝 Special Request", "🔍 Track My Order", "💬 Chat with Us"])
+    c_tab1, c_tab2, c_tab3, c_tab4, c_tab5 = st.tabs(["🛍️ Shop & Cart", "📝 Special Request", "🔍 Track My Order", "💬 Chat with Us", "🧾 My Receipt"])
     
+    # CART SUMMARY EXPANDER / BADGE
+    cart_count = len(st.session_state.cart)
+    cart_total = sum([item['total_price'] for item in st.session_state.cart])
+
     with c_tab2:
         st.subheader("Can't find what you need?")
         with st.form("custom_order_form", clear_on_submit=True):
@@ -746,7 +788,90 @@ else:
         else:
             st.warning("Please enter your phone number to load or start a chat thread.")
 
+    with c_tab5:
+        st.subheader("🧾 Recent Transaction Receipt")
+        if st.session_state.last_receipt:
+            rec = st.session_state.last_receipt
+            st.markdown(f"""
+            <div style="background: #ffffff; color: #000; padding: 25px; border-radius: 12px; border: 3px solid #1565c0; font-family: monospace; max-width: 600px; margin: auto;">
+                <h2 style="text-align: center; margin: 0; color: #1565c0;">🏢 {store_title}</h2>
+                <p style="text-align: center; font-size: 0.95rem; margin: 5px 0;">Customer Purchase Receipt</p>
+                <hr>
+                <p><b>Customer Name:</b> {rec['customer']}</p>
+                <p><b>Phone Number:</b> {rec['phone']}</p>
+                <p><b>Transaction Date:</b> {rec['date']}</p>
+                <hr>
+                <table style="width: 100%; text-align: left;">
+                    <tr><th>Item Description</th><th>Qty</th><th>Price</th><th>Total</th></tr>
+            """, unsafe_allow_html=True)
+            for itm in rec['items']:
+                st.markdown(f"<tr><td>{itm['name']} ({itm['unit']})</td><td>{itm['qty']}</td><td>₦{itm['price']:,.2f}</td><td>₦{itm['total']:,.2f}</td></tr>", unsafe_allow_html=True)
+            st.markdown(f"""
+                </table>
+                <hr>
+                <h3 style="text-align: right; color: #1565c0;">Total Amount: ₦{rec['grand_total']:,.2f}</h3>
+                <p style="text-align: center; font-size: 0.85rem; margin-top: 20px;">Thank you for shopping with Sammyreks Business Center!</p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.info("No active receipt found. Complete an order to generate your receipt automatically.")
+
     with c_tab1:
+        # Cart Summary Box at top of Shop
+        st.markdown(f"""
+            <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; border: 1px solid #90caf9; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <div>🛒 <b>Shopping Cart Items:</b> {cart_count} product(s)</div>
+                <div><b>Total Sum:</b> ₦{cart_total:,.2f}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        if cart_count > 0:
+            with st.expander("🛍️ View Cart & Checkout All Items"):
+                cart_df = pd.DataFrame(st.session_state.cart)
+                st.dataframe(cart_df[['name', 'unit', 'qty', 'total_price']], use_container_width=True, hide_index=True)
+                st.markdown(f"#### Grand Total: ₦{cart_total:,.2f}")
+                
+                with st.form("checkout_cart_form"):
+                    c_name_cart = st.text_input("Your Full Name")
+                    c_phone_cart = st.text_input("Your Phone Number")
+                    checkout_btn = st.form_submit_button("🚀 Checkout & Order All Items")
+                    
+                    if checkout_btn:
+                        if c_name_cart.strip() and c_phone_cart.strip():
+                            receipt_items = []
+                            for item in st.session_state.cart:
+                                order_payload = {
+                                    "customer": c_name_cart,
+                                    "item": f"{item['name']} ({item['unit']})",
+                                    "qty": int(item['qty']),
+                                    "status": "Order Placed",
+                                    "contact_phone": c_phone_cart,
+                                    "total_price": float(item['total_price']),
+                                    "date": date.today().isoformat(),
+                                    "timestamp": get_now()
+                                }
+                                supabase.table("orders").insert(order_payload).execute()
+                                receipt_items.append({
+                                    "name": item['name'], "unit": item['unit'], 
+                                    "qty": item['qty'], "price": item['unit_price'], "total": item['total_price']
+                                })
+                            
+                            # Generate Receipt for Cart
+                            st.session_state.last_receipt = {
+                                "type": "Cart Order", "customer": c_name_cart,
+                                "phone": c_phone_cart, "date": get_now(),
+                                "items": receipt_items, "grand_total": cart_total, "cashier": "Online Store"
+                            }
+                            st.session_state.cart = [] # Clear cart
+                            st.success("✅ Order placed successfully! Receipt generated in 'My Receipt' tab.")
+                            st.rerun()
+                        else:
+                            st.error("Please enter both Name and Phone Number.")
+                
+                if st.button("🗑️ Clear Cart"):
+                    st.session_state.cart = []
+                    st.rerun()
+
         try:
             res_shop = supabase.table("products").select("*").gt("qty_cartons", 0).execute()
             df_shop = pd.DataFrame(res_shop.data) if res_shop.data else pd.DataFrame()
@@ -811,37 +936,21 @@ else:
                             price = s_row['price_retail'] if unit_choice == r_lbl else (s_row['price_pack'] if unit_choice == p_lbl else s_row['price_carton'])
                             total_calc = price * qty_choice
                             
-                            with st.popover(f"🛒 Order - ₦{total_calc:,.2f}"):
-                                st.subheader(f"{store_title}\nConfirm Order for {s_row['name']}")
-                                with st.form(key=f"popover_form_{s_row['id']}"):
-                                    c_name = st.text_input("Full Name")
-                                    c_phone = st.text_input("Phone Number")
-                                    submit_order = st.form_submit_button("Confirm Order Now")
-                                    
-                                    if submit_order:
-                                        if c_name.strip() and c_phone.strip():
-                                            order_payload = {
-                                                "customer": c_name,
-                                                "item": f"{s_row['name']} ({unit_choice})",
-                                                "qty": int(qty_choice),
-                                                "status": "Order Placed",
-                                                "contact_phone": c_phone,
-                                                "total_price": float(total_calc),
-                                                "date": date.today().isoformat(),
-                                                "timestamp": get_now()
-                                            }
-                                            try:
-                                                supabase.table("orders").insert(order_payload).execute()
-                                                st.success(f"✅ Success! Your order for {s_row['name']} has been placed.")
-                                                st.rerun()
-                                            except Exception as err:
-                                                st.error(f"Order submission failed: {err}")
-                                        else:
-                                            st.error("Please enter both Name and Phone Number.")
+                            if st.button(f"➕ Add to Cart - ₦{total_calc:,.2f}", key=f"add_cart_{s_row['id']}"):
+                                st.session_state.cart.append({
+                                    "product_id": s_row['id'],
+                                    "name": s_row['name'],
+                                    "unit": unit_choice,
+                                    "qty": int(qty_choice),
+                                    "unit_price": float(price),
+                                    "total_price": float(total_calc)
+                                })
+                                st.success(f"Added {qty_choice} {unit_choice}(s) of {s_row['name']} to cart!")
+                                st.rerun()
                         st.divider()
             else:
                 st.warning("No products found matching this category or search.")
         else:
             st.warning("No products available in stock yet.")
 
-st.sidebar.caption(f"{store_title} v8.3 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v9.0 | {date.today().year}")
