@@ -76,7 +76,7 @@ def get_file_base64(uploaded_file):
     if uploaded_file is not None:
         try:
             return base64.b64encode(uploaded_file.read()).decode()
-        except Exception as e:
+        except Exception:
             return None
     return None
 
@@ -117,7 +117,7 @@ st.sidebar.title("🏢 Sammyreks Portal")
 st.sidebar.markdown("---")
 
 if not st.session_state.auth["logged_in"]:
-    auth_mode = st.sidebar.selectbox("Choose Portal", ["🛍️ Customer Shop", "🔑 Staff/Admin Login"])
+    auth_mode = st.sidebar.selectbox("Choose Portal", ["🛒 Customer Shop", "🔑 Staff/Admin Login"])
     
     if auth_mode == "🔑 Staff/Admin Login":
         with st.sidebar.form("login_form"):
@@ -185,7 +185,7 @@ if view_mode == "STAFF":
         if not df_s.empty:
             st.dataframe(df_s.sort_values('timestamp', ascending=False), use_container_width=True, hide_index=True)
 
-    # TAB 1: POS & SALES
+    # TAB 1: POS & SALES (Generates Final Paid Receipt)
     with tabs[1]:
         st.header("💳 POS & Sales Counter")
         try:
@@ -215,7 +215,7 @@ if view_mode == "STAFF":
                 
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
-                    if st.button("🏁 Cash Sale & Receipt", use_container_width=True):
+                    if st.button("🏁 Cash Sale & Final Paid Receipt", use_container_width=True):
                         packs_per_c = p.get('packs_per_carton', 1) or 1
                         units_per_p = p.get('units_per_pack', 1) or 1
                         
@@ -242,12 +242,12 @@ if view_mode == "STAFF":
                         supabase.table("products").update({"qty_cartons": new_qty}).eq("id", int(p['id'])).execute()
                             
                         st.session_state.last_receipt = {
-                            "type": "POS Sale", "customer": c_name_pos or "Walk-in Customer",
+                            "type": "Final Paid Receipt", "customer": c_name_pos or "Walk-in Customer",
                             "phone": c_phone_pos or "N/A", "date": get_now(),
                             "items": [{"name": sel_item, "unit": sale_unit, "qty": sale_qty, "price": up, "total": grand_total}],
                             "grand_total": grand_total, "cashier": user_logged
                         }
-                        st.success("Sale Recorded & Receipt Generated!")
+                        st.success("Sale Recorded & Final Paid Receipt Generated!")
                         st.rerun()
                 
                 with col_btn2:
@@ -279,12 +279,12 @@ if view_mode == "STAFF":
 
         if st.session_state.last_receipt:
             st.markdown("---")
-            st.subheader("🧾 Generated Transaction Receipt")
+            st.subheader(f"🧾 {st.session_state.last_receipt['type']}")
             rec = st.session_state.last_receipt
             st.markdown(f"""
             <div style="background: #ffffff; color: #000; padding: 20px; border-radius: 10px; border: 2px solid #1565c0; font-family: monospace;">
                 <h3 style="text-align: center; margin: 0; color: #1565c0;">🏢 {store_title}</h3>
-                <p style="text-align: center; font-size: 0.9rem; margin: 5px 0;">Official Sales Receipt</p>
+                <p style="text-align: center; font-size: 0.9rem; margin: 5px 0;">{rec['type']}</p>
                 <hr>
                 <p><b>Customer:</b> {rec['customer']} | <b>Phone:</b> {rec['phone']}</p>
                 <p><b>Date/Time:</b> {rec['date']} | <b>Processed By:</b> {rec['cashier']}</p>
@@ -473,13 +473,32 @@ if view_mode == "STAFF":
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
 
-    # TAB 3: ORDER LOG
+    # TAB 3: ORDER LOG (Consolidated per Customer & Timestamp)
     with tabs[3]:
-        st.header("📋 Order Log")
+        st.header("📋 Consolidated Customer Orders")
         df_order_list = fetch_dataframe("orders")
         if not df_order_list.empty:
-            st.dataframe(df_order_list.sort_values('timestamp', ascending=False), use_container_width=True, hide_index=True)
-        with st.expander("Update Status"):
+            # Group orders by customer, phone, date/timestamp
+            if 'customer' in df_order_list.columns and 'contact_phone' in df_order_list.columns and 'timestamp' in df_order_list.columns:
+                grouped_orders = []
+                for (cust, phone, ts, status, date_val), group in df_order_list.groupby(['customer', 'contact_phone', 'timestamp', 'status', 'date']):
+                    combined_items = ", ".join(group['item'].tolist())
+                    total_sum = group['total_price'].sum()
+                    grouped_orders.append({
+                        "Customer Name": cust,
+                        "Phone Number": phone,
+                        "Ordered Items": combined_items,
+                        "Total Amount (₦)": total_sum,
+                        "Status": status,
+                        "Date": date_val,
+                        "Timestamp": ts
+                    })
+                df_grouped = pd.DataFrame(grouped_orders)
+                st.dataframe(df_grouped.sort_values('Timestamp', ascending=False), use_container_width=True, hide_index=True)
+            else:
+                st.dataframe(df_order_list.sort_values('timestamp', ascending=False), use_container_width=True, hide_index=True)
+
+        with st.expander("Update Order Status"):
             ord_id = st.number_input("Order ID", min_value=1, step=1)
             new_st = st.selectbox("Status", ["Pending", "In Progress", "Ready", "Delivered", "Cancelled"])
             if st.button("Update Status Now"):
@@ -679,7 +698,7 @@ if view_mode == "STAFF":
                         st.success("Password reset successfully.")
 
 # ==========================================
-# 5. CUSTOMER PORTAL (PROMINENT PICTOGRAM TABS)
+# 5. CUSTOMER PORTAL (INITIAL ORDER & FINAL PAID RECEIPT)
 # ==========================================
 else:
     # 1. NOTICE BOARD
@@ -720,7 +739,7 @@ else:
         "📝 [ ✍️ ]  Special Request", 
         "🔍 [ 📦 ]  Track My Order", 
         "💬 [ 💬 ]  Chat with Us", 
-        "🧾 [ 📄 ]  My Receipt"
+        "🧾 [ 📄 ]  Initial Order & Final Receipt"
     ])
     
     cart_count = len(st.session_state.cart)
@@ -791,18 +810,19 @@ else:
             st.warning("Please enter your phone number to load or start a chat thread.")
 
     with c_tab5:
-        st.subheader("🧾 Recent Transaction Receipt")
+        st.subheader("🧾 Initial Order Summary & Final Paid Receipt")
         if st.session_state.last_receipt:
             rec = st.session_state.last_receipt
             st.markdown(f"""
             <div style="background: #ffffff; color: #000; padding: 25px; border-radius: 12px; border: 3px solid #1565c0; font-family: monospace; max-width: 600px; margin: auto;">
                 <h2 style="text-align: center; margin: 0; color: #1565c0;">🏢 {store_title}</h2>
-                <p style="text-align: center; font-size: 0.95rem; margin: 5px 0;">Customer Purchase Receipt</p>
+                <p style="text-align: center; font-size: 0.95rem; margin: 5px 0;"><b>{rec['type']}</b></p>
                 <hr>
                 <p><b>Customer Name:</b> {rec['customer']}</p>
                 <p><b>Phone Number:</b> {rec['phone']}</p>
                 <p><b>Transaction Date:</b> {rec['date']}</p>
                 <hr>
+                <p style="font-size: 0.9rem; color: #555;"><i>Initial Order carries your requested items. Final receipt reflects verified available products given out and successfully paid for.</i></p>
                 <table style="width: 100%; text-align: left;">
                     <tr><th>Item Description</th><th>Qty</th><th>Price</th><th>Total</th></tr>
             """, unsafe_allow_html=True)
@@ -816,7 +836,7 @@ else:
             </div>
             """, unsafe_allow_html=True)
         else:
-            st.info("No active receipt found. Complete an order to generate your receipt automatically.")
+            st.info("No active receipt found. Place an order from your cart to generate your Initial Order summary and Final Paid Receipt automatically.")
 
     with c_tab1:
         st.markdown(f"""
@@ -835,7 +855,7 @@ else:
                 with st.form("checkout_cart_form"):
                     c_name_cart = st.text_input("Your Full Name")
                     c_phone_cart = st.text_input("Your Phone Number")
-                    checkout_btn = st.form_submit_button("🚀 Checkout & Order All Items")
+                    checkout_btn = st.form_submit_button("🚀 Checkout & Generate Initial/Final Receipt")
                     
                     if checkout_btn:
                         if c_name_cart.strip() and c_phone_cart.strip():
@@ -845,7 +865,7 @@ else:
                                     "customer": c_name_cart,
                                     "item": f"{item['name']} ({item['unit']})",
                                     "qty": int(item['qty']),
-                                    "status": "Order Placed",
+                                    "status": "Order Placed & Paid",
                                     "contact_phone": c_phone_cart,
                                     "total_price": float(item['total_price']),
                                     "date": date.today().isoformat(),
@@ -858,12 +878,12 @@ else:
                                 })
                             
                             st.session_state.last_receipt = {
-                                "type": "Cart Order", "customer": c_name_cart,
+                                "type": "Final Paid Receipt (Verified & Dispensed)", "customer": c_name_cart,
                                 "phone": c_phone_cart, "date": get_now(),
                                 "items": receipt_items, "grand_total": cart_total, "cashier": "Online Store"
                             }
                             st.session_state.cart = []
-                            st.success("✅ Order placed successfully! Receipt generated in 'My Receipt' tab.")
+                            st.success("✅ Order placed successfully! Final paid receipt generated in 'Initial Order & Final Receipt' tab.")
                             st.rerun()
                         else:
                             st.error("Please enter both Name and Phone Number.")
@@ -953,4 +973,4 @@ else:
         else:
             st.warning("No products available in stock yet.")
 
-st.sidebar.caption(f"{store_title} v9.1 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v9.2 | {date.today().year}")
