@@ -215,7 +215,7 @@ if view_mode == "STAFF":
                 
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
-                    if st.button("🏁 Cash Sale & Full Audit Receipt", use_container_width=True):
+                    if st.button("🏁 Cash Sale & Delivery Receipt", use_container_width=True):
                         packs_per_c = p.get('packs_per_carton', 1) or 1
                         units_per_p = p.get('units_per_pack', 1) or 1
                         
@@ -242,17 +242,15 @@ if view_mode == "STAFF":
                         supabase.table("products").update({"qty_cartons": new_qty}).eq("id", int(p['id'])).execute()
                             
                         st.session_state.last_receipt = {
-                            "type": "Store Sales Audit Receipt (Available & Sold)", 
+                            "type": "Successful Delivery Receipt", 
                             "customer": c_name_pos or "Walk-in Customer",
                             "phone": c_phone_pos or "N/A", 
                             "date": get_now(),
                             "sold_items": [{"name": sel_item, "unit": sale_unit, "qty": sale_qty, "price": up, "total": grand_total}],
-                            "available_items": [sel_item],
-                            "unavailable_items": [],
                             "grand_total": grand_total, 
                             "cashier": user_logged
                         }
-                        st.success("Sale Recorded & Full Audit Receipt Generated!")
+                        st.success("Sale Recorded & Delivery Receipt Generated!")
                         st.rerun()
                 
                 with col_btn2:
@@ -288,10 +286,7 @@ if view_mode == "STAFF":
             rec_type = rec.get('type', 'Official Receipt')
             st.subheader(f"🧾 {rec_type}")
             
-            # Safe parsing for items to avoid KeyError
             sold_items_list = rec.get('sold_items', rec.get('items', []))
-            avail_items = rec.get('available_items', [])
-            unavail_items = rec.get('unavailable_items', [])
 
             st.markdown(f"""
             <div style="background: #ffffff; color: #000; padding: 20px; border-radius: 10px; border: 2px solid #1565c0; font-family: monospace;">
@@ -301,7 +296,6 @@ if view_mode == "STAFF":
                 <p><b>Customer:</b> {rec.get('customer', 'Customer')} | <b>Phone:</b> {rec.get('phone', 'N/A')}</p>
                 <p><b>Date/Time:</b> {rec.get('date', '')} | <b>Staff:</b> {rec.get('cashier', 'Staff')}</p>
                 <hr>
-                <h4 style="color: #1565c0; margin-bottom: 5px;">✅ Successfully Sold & Dispensed Products:</h4>
                 <table style="width: 100%; text-align: left;">
                     <tr><th>Item</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr>
             """, unsafe_allow_html=True)
@@ -314,11 +308,8 @@ if view_mode == "STAFF":
                 st.markdown(f"<tr><td>{i_name} ({i_unit})</td><td>{i_qty}</td><td>₦{i_price:,.2f}</td><td>₦{i_total:,.2f}</td></tr>", unsafe_allow_html=True)
             st.markdown(f"""
                 </table>
-                <br>
-                <p><b>📦 Available In Stock Verified:</b> {', '.join(avail_items) if avail_items else 'All Items'}</p>
-                <p><b>❌ Unavailable / Out of Stock:</b> {', '.join(unavail_items) if unavail_items else 'None'}</p>
                 <hr>
-                <h3 style="text-align: right; color: #1565c0;">Grand Total Paid: ₦{rec.get('grand_total', 0.0):,.2f}</h3>
+                <h3 style="text-align: right; color: #1565c0;">Grand Total: ₦{rec.get('grand_total', 0.0):,.2f}</h3>
             </div>
             """, unsafe_allow_html=True)
             if st.button("❌ Close Receipt View"):
@@ -536,7 +527,7 @@ if view_mode == "STAFF":
                 
                 col_up1, col_up2 = st.columns(2)
                 with col_up1:
-                    if st.button("🔄 Apply Status Change", use_container_width=True):
+                    if st.button("🔄 Apply Status Change (Auto-Generates Delivery Receipt if Delivered)", use_container_width=True):
                         supabase.table("orders").update({"status": new_st}).eq("id", target_order_id).execute()
                         st.success(f"Order #{target_order_id} updated to '{new_st}'!")
                         st.rerun()
@@ -741,7 +732,7 @@ if view_mode == "STAFF":
                         st.success("Password reset successfully.")
 
 # ==========================================
-# 5. CUSTOMER PORTAL
+# 5. CUSTOMER PORTAL (DYNAMIC ORDER PORTFOLIO & DUAL RECEIPTS)
 # ==========================================
 else:
     # 1. NOTICE BOARD
@@ -781,7 +772,7 @@ else:
         "📝 [ ✍️ ]  Special Request", 
         "🔍 [ 📦 ]  Track My Order", 
         "💬 [ 💬 ]  Chat with Us", 
-        "🧾 [ 📄 ]  Shareable Customer Receipt"
+        "🧾 [ 📄 ]  Customer Order & Delivery Portfolio"
     ])
     
     cart_count = len(st.session_state.cart)
@@ -802,13 +793,25 @@ else:
                         "date": date.today().isoformat(), "timestamp": get_now()
                     }
                     supabase.table("orders").insert(order_payload).execute()
-                    st.success("✅ Request logged to database! We will contact you soon.")
+                    
+                    # Store as latest initial order in session state for portfolio preview
+                    st.session_state.last_receipt = {
+                        "type": "Initial Customer Order Receipt",
+                        "customer": cust_n,
+                        "phone": cust_p,
+                        "date": get_now(),
+                        "sold_items": [{"name": f"SPECIAL: {cust_i}", "unit": "Request", "qty": cust_q, "price": 0.0, "total": 0.0}],
+                        "grand_total": 0.0,
+                        "status": "Pending"
+                    }
+                    st.success("✅ Request logged to database & Initial Order Receipt generated!")
+                    st.rerun()
                 else:
                     st.error("Please fill all fields.")
 
     with c_tab3:
         st.subheader("Check your order status")
-        track_phone = st.text_input("Enter the Phone Number used to order")
+        track_phone = st.text_input("Enter your Phone Number to check status")
         if track_phone:
             try:
                 res_track = supabase.table("orders").select("item, qty, status, total_price, date").eq("contact_phone", track_phone).execute()
@@ -852,20 +855,76 @@ else:
             st.warning("Please enter your phone number to load or start a chat thread.")
 
     with c_tab5:
-        st.subheader("🧾 Shareable Customer Order & Paid Receipt")
-        if st.session_state.last_receipt:
-            rec = st.session_state.last_receipt
-            rec_type = rec.get('type', 'Consolidated Paid Receipt')
-            sold_items_list = rec.get('sold_items', rec.get('items', []))
+        st.subheader("🧾 Customer Order Portfolio & Active Receipt")
+        
+        # Allow customer to lookup by phone number to pull active receipt from database orders
+        lookup_phone = st.text_input("Enter your Phone Number to load your Portfolio Receipt")
+        
+        active_rec = None
+        if lookup_phone.strip():
+            try:
+                cust_orders_res = supabase.table("orders").select("*").eq("contact_phone", lookup_phone.strip()).order("id", desc=True).execute()
+                if cust_orders_res.data:
+                    # Get latest order batch (same timestamp or latest set)
+                    latest_ts = cust_orders_res.data[0]['timestamp']
+                    batch_orders = [o for o in cust_orders_res.data if o['timestamp'] == latest_ts]
+                    
+                    c_name = batch_orders[0]['customer']
+                    c_status = batch_orders[0]['status']
+                    c_date = batch_orders[0]['date']
+                    
+                    items_list = []
+                    total_sum = 0.0
+                    for bo in batch_orders:
+                        items_list.append({
+                            "name": bo['item'],
+                            "unit": "Unit",
+                            "qty": bo['qty'],
+                            "price": bo['total_price'] / bo['qty'] if bo['qty'] > 0 else 0.0,
+                            "total": bo['total_price']
+                        })
+                        total_sum += bo['total_price']
+                    
+                    # Check if status is Delivered -> show Successful Delivery Receipt, otherwise Initial Order Receipt
+                    if c_status == "Delivered":
+                        active_rec = {
+                            "type": "Successful Delivery Receipt",
+                            "customer": c_name,
+                            "phone": lookup_phone.strip(),
+                            "date": c_date,
+                            "sold_items": items_list,
+                            "grand_total": total_sum,
+                            "status": c_status
+                        }
+                    elif c_status != "Cancelled":
+                        active_rec = {
+                            "type": "Initial Customer Order Receipt",
+                            "customer": c_name,
+                            "phone": lookup_phone.strip(),
+                            "date": c_date,
+                            "sold_items": items_list,
+                            "grand_total": total_sum,
+                            "status": c_status
+                        }
+            except Exception:
+                pass
+        
+        # Fallback to session state if lookup empty
+        if not active_rec and st.session_state.last_receipt:
+            active_rec = st.session_state.last_receipt
+
+        if active_rec:
+            rec_type = active_rec.get('type', 'Customer Order Receipt')
+            sold_items_list = active_rec.get('sold_items', [])
             
             receipt_html = f"""
             <div id="receipt-box" style="background: #ffffff; color: #000; padding: 25px; border-radius: 12px; border: 3px solid #1565c0; font-family: monospace; max-width: 600px; margin: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
                 <h2 style="text-align: center; margin: 0; color: #1565c0;">🏢 {store_title}</h2>
                 <p style="text-align: center; font-size: 0.95rem; margin: 5px 0;"><b>{rec_type}</b></p>
                 <hr>
-                <p><b>Customer Name:</b> {rec.get('customer', 'Customer')}</p>
-                <p><b>Phone Number:</b> {rec.get('phone', 'N/A')}</p>
-                <p><b>Date & Time:</b> {rec.get('date', '')}</p>
+                <p><b>Customer Name:</b> {active_rec.get('customer', 'Customer')}</p>
+                <p><b>Phone Number:</b> {active_rec.get('phone', 'N/A')}</p>
+                <p><b>Status:</b> <span style="color: #2e7d32; font-weight: bold;">{active_rec.get('status', 'Active')}</span></p>
                 <hr>
                 <table style="width: 100%; text-align: left; border-collapse: collapse;">
                     <tr style="border-bottom: 1px solid #ddd;"><th>Item Description</th><th>Qty</th><th>Price</th><th>Total</th></tr>
@@ -881,14 +940,14 @@ else:
             receipt_html += f"""
                 </table>
                 <hr>
-                <h3 style="text-align: right; color: #1565c0;">Total Paid: ₦{rec.get('grand_total', 0.0):,.2f}</h3>
-                <p style="text-align: center; font-size: 0.85rem; margin-top: 20px;">Thank you for shopping with Sammyreks Business Center!<br><i>This receipt carries all your ordered items and verified successful purchases.</i></p>
+                <h3 style="text-align: right; color: #1565c0;">Total: ₦{active_rec.get('grand_total', 0.0):,.2f}</h3>
+                <p style="text-align: center; font-size: 0.85rem; margin-top: 20px;">Thank you for shopping with Sammyreks Business Center!<br><i>This portfolio automatically updates from Initial Order to Successful Delivery upon fulfillment.</i></p>
             </div>
             """
             st.markdown(receipt_html, unsafe_allow_html=True)
-            st.success("💡 You can copy or screenshot this receipt to share anywhere!")
+            st.success("💡 Every new order or request automatically updates and replaces this portfolio receipt view!")
         else:
-            st.info("No active receipt found. Complete an order from your cart to generate your shareable receipt automatically.")
+            st.info("Enter your phone number above or place an order from your cart to load your active order portfolio receipt.")
 
     with c_tab1:
         st.markdown(f"""
@@ -907,18 +966,17 @@ else:
                 with st.form("checkout_cart_form"):
                     c_name_cart = st.text_input("Your Full Name")
                     c_phone_cart = st.text_input("Your Phone Number")
-                    checkout_btn = st.form_submit_button("🚀 Checkout & Generate Shareable Receipt")
+                    checkout_btn = st.form_submit_button("🚀 Checkout & Generate Initial Order Receipt")
                     
                     if checkout_btn:
                         if c_name_cart.strip() and c_phone_cart.strip():
                             receipt_items = []
-                            available_list = []
                             for item in st.session_state.cart:
                                 order_payload = {
                                     "customer": c_name_cart,
                                     "item": f"{item['name']} ({item['unit']})",
                                     "qty": int(item['qty']),
-                                    "status": "Order Placed & Paid",
+                                    "status": "Pending",
                                     "contact_phone": c_phone_cart,
                                     "total_price": float(item['total_price']),
                                     "date": date.today().isoformat(),
@@ -929,21 +987,18 @@ else:
                                     "name": item['name'], "unit": item['unit'], 
                                     "qty": item['qty'], "price": item['unit_price'], "total": item['total_price']
                                 })
-                                available_list.append(item['name'])
                             
                             st.session_state.last_receipt = {
-                                "type": "Consolidated Paid Receipt", 
+                                "type": "Initial Customer Order Receipt", 
                                 "customer": c_name_cart,
                                 "phone": c_phone_cart, 
                                 "date": get_now(),
                                 "sold_items": receipt_items, 
-                                "available_items": available_list,
-                                "unavailable_items": [],
                                 "grand_total": cart_total, 
-                                "cashier": "Online Store"
+                                "status": "Pending"
                             }
                             st.session_state.cart = []
-                            st.success("✅ Order placed successfully! Your shareable consolidated receipt is ready in the 'Shareable Customer Receipt' tab.")
+                            st.success("✅ Order placed successfully! Your Initial Order Receipt is ready in the 'Customer Order & Delivery Portfolio' tab.")
                             st.rerun()
                         else:
                             st.error("Please enter both Name and Phone Number.")
@@ -1033,4 +1088,4 @@ else:
         else:
             st.warning("No products available in stock yet.")
 
-st.sidebar.caption(f"{store_title} v9.4 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v9.5 | {date.today().year}")
