@@ -76,7 +76,7 @@ def get_file_base64(uploaded_file):
     if uploaded_file is not None:
         try:
             return base64.b64encode(uploaded_file.read()).decode()
-        except Exception:
+        except Exception as e:
             return None
     return None
 
@@ -105,11 +105,9 @@ st.set_page_config(page_title="Sammyreks Business Center", layout="wide", page_i
 if 'auth' not in st.session_state:
     st.session_state.auth = {"logged_in": False, "user": None, "role": None}
 
-# Initialize shopping cart in session state
 if 'cart' not in st.session_state:
     st.session_state.cart = []
 
-# Initialize last receipt in session state
 if 'last_receipt' not in st.session_state:
     st.session_state.last_receipt = None
 
@@ -119,7 +117,7 @@ st.sidebar.title("🏢 Sammyreks Portal")
 st.sidebar.markdown("---")
 
 if not st.session_state.auth["logged_in"]:
-    auth_mode = st.sidebar.selectbox("Choose Portal", ["🛒 Customer Shop", "🔑 Staff/Admin Login"])
+    auth_mode = st.sidebar.selectbox("Choose Portal", ["🛍️ Customer Shop", "🔑 Staff/Admin Login"])
     
     if auth_mode == "🔑 Staff/Admin Login":
         with st.sidebar.form("login_form"):
@@ -243,7 +241,6 @@ if view_mode == "STAFF":
                         new_qty = float(p['qty_cartons'] - cartons_deducted)
                         supabase.table("products").update({"qty_cartons": new_qty}).eq("id", int(p['id'])).execute()
                             
-                        # Generate Receipt
                         st.session_state.last_receipt = {
                             "type": "POS Sale", "customer": c_name_pos or "Walk-in Customer",
                             "phone": c_phone_pos or "N/A", "date": get_now(),
@@ -280,14 +277,13 @@ if view_mode == "STAFF":
                             st.warning(f"Debt logged for {c_name_pos}!")
                             st.rerun()
 
-        # Display Receipt if generated
         if st.session_state.last_receipt:
             st.markdown("---")
             st.subheader("🧾 Generated Transaction Receipt")
             rec = st.session_state.last_receipt
             st.markdown(f"""
-            <div style="background: #ffffff; color: #000; padding: 20px; border-radius: 10px; border: 2px solid #2e7d32; font-family: monospace;">
-                <h3 style="text-align: center; margin: 0; color: #1b5e20;">🏢 {store_title}</h3>
+            <div style="background: #ffffff; color: #000; padding: 20px; border-radius: 10px; border: 2px solid #1565c0; font-family: monospace;">
+                <h3 style="text-align: center; margin: 0; color: #1565c0;">🏢 {store_title}</h3>
                 <p style="text-align: center; font-size: 0.9rem; margin: 5px 0;">Official Sales Receipt</p>
                 <hr>
                 <p><b>Customer:</b> {rec['customer']} | <b>Phone:</b> {rec['phone']}</p>
@@ -301,7 +297,7 @@ if view_mode == "STAFF":
             st.markdown(f"""
                 </table>
                 <hr>
-                <h4 style="text-align: right; margin: 0; color: #1b5e20;">Grand Total: ₦{rec['grand_total']:,.2f}</h4>
+                <h4 style="text-align: right; margin: 0; color: #1565c0;">Grand Total: ₦{rec['grand_total']:,.2f}</h4>
                 <p style="text-align: center; font-size: 0.8rem; margin-top: 15px;">Thank you for your patronage!</p>
             </div>
             """, unsafe_allow_html=True)
@@ -348,8 +344,8 @@ if view_mode == "STAFF":
                 st.caption("Copy an image from your device, then click the button below:")
                 paste_result = pbutton(
                     label="📋 Click here to Paste Image",
-                    background_color="#2e7d32",
-                    hover_background_color="#1b5e20",
+                    background_color="#1565c0",
+                    hover_background_color="#0d47a1",
                     errors="raise"
                 )
                 if paste_result.image_data is not None:
@@ -683,7 +679,7 @@ if view_mode == "STAFF":
                         st.success("Password reset successfully.")
 
 # ==========================================
-# 5. CUSTOMER PORTAL (MULTI-ITEM CART & RECEIPT)
+# 5. CUSTOMER PORTAL (PROMINENT PICTOGRAM TABS)
 # ==========================================
 else:
     # 1. NOTICE BOARD
@@ -694,7 +690,7 @@ else:
             if notice_text:
                 st.markdown(f"""
                     <div style="background: #1565c0; padding: 12px 18px; border-radius: 8px; color: #ffffff; font-weight: bold; text-align: center; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        🌐 {notice_text}
+                        📢 {notice_text}
                     </div>
                 """, unsafe_allow_html=True)
     except Exception:
@@ -710,7 +706,7 @@ else:
     except Exception:
         pass
 
-    # 3. GREEN WELCOME BANNER (Corporate Blue/Green Accent styling)
+    # 3. GREEN WELCOME BANNER
     st.markdown(f"""
         <div style="background: linear-gradient(135deg, #1565c0, #0d47a1); padding: 25px; border-radius: 12px; color: white; text-align: center; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(21,101,192,0.3);">
             <h1 style="margin: 0; font-size: 2.2rem;">🏢 Welcome to {store_title}</h1>
@@ -718,9 +714,15 @@ else:
         </div>
     """, unsafe_allow_html=True)
 
-    c_tab1, c_tab2, c_tab3, c_tab4, c_tab5 = st.tabs(["🛍️ Shop & Cart", "📝 Special Request", "🔍 Track My Order", "💬 Chat with Us", "🧾 My Receipt"])
+    # PROMINENT PICTOGRAM TAB HEADERS
+    c_tab1, c_tab2, c_tab3, c_tab4, c_tab5 = st.tabs([
+        "🛒 [ 🛍️ ]  Shop & Cart", 
+        "📝 [ ✍️ ]  Special Request", 
+        "🔍 [ 📦 ]  Track My Order", 
+        "💬 [ 💬 ]  Chat with Us", 
+        "🧾 [ 📄 ]  My Receipt"
+    ])
     
-    # CART SUMMARY EXPANDER / BADGE
     cart_count = len(st.session_state.cart)
     cart_total = sum([item['total_price'] for item in st.session_state.cart])
 
@@ -817,7 +819,6 @@ else:
             st.info("No active receipt found. Complete an order to generate your receipt automatically.")
 
     with c_tab1:
-        # Cart Summary Box at top of Shop
         st.markdown(f"""
             <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; border: 1px solid #90caf9; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <div>🛒 <b>Shopping Cart Items:</b> {cart_count} product(s)</div>
@@ -856,13 +857,12 @@ else:
                                     "qty": item['qty'], "price": item['unit_price'], "total": item['total_price']
                                 })
                             
-                            # Generate Receipt for Cart
                             st.session_state.last_receipt = {
                                 "type": "Cart Order", "customer": c_name_cart,
                                 "phone": c_phone_cart, "date": get_now(),
                                 "items": receipt_items, "grand_total": cart_total, "cashier": "Online Store"
                             }
-                            st.session_state.cart = [] # Clear cart
+                            st.session_state.cart = []
                             st.success("✅ Order placed successfully! Receipt generated in 'My Receipt' tab.")
                             st.rerun()
                         else:
@@ -953,4 +953,4 @@ else:
         else:
             st.warning("No products available in stock yet.")
 
-st.sidebar.caption(f"{store_title} v9.0 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v9.1 | {date.today().year}")
