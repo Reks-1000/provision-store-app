@@ -919,7 +919,7 @@ else:
                             for item in st.session_state.cart:
                                 order_payload = {
                                     "customer": c_name_cart.strip(),
-                                    "item": f"{item['name']} ({item['unit']})" + (f" - Note: {c_details_cart.strip()}" if c_details_cart.strip() else ""),
+                                    "item": f"{item['name']} ({item['unit']})",
                                     "qty": int(item['qty']),
                                     "status": "Pending",
                                     "contact_phone": c_phone_cart.strip(),
@@ -1079,7 +1079,7 @@ else:
                     for e in valid_entries:
                         order_payload = {
                             "customer": cust_n.strip(),
-                            "item": f"SPECIAL: {e['item'].strip()}" + (f" - Note: {c_details_req.strip()}" if c_details_req.strip() else ""),
+                            "item": f"SPECIAL: {e['item'].strip()}",
                             "qty": int(e['qty']),
                             "status": "Pending Price Audit",
                             "contact_phone": cust_p.strip(),
@@ -1235,19 +1235,9 @@ else:
             sold_items_list = active_rec.get('sold_items', [])
             delivery_notes = active_rec.get('delivery_notes', '')
             
-            receipt_html = f"""
-            <div id="receipt-box" style="background: #ffffff; color: #000; padding: 18px; border-radius: 12px; border: 3px solid #1565c0; font-family: monospace; max-width: 650px; margin: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
-                <h2 style="text-align: center; margin: 0; color: #1565c0;">🏢 {store_title}</h2>
-                <p style="text-align: center; font-size: 0.95rem; margin: 5px 0;"><b>{rec_type}</b></p>
-                <hr>
-                <p><b>Customer Name:</b> {active_rec.get('customer', 'Customer')}</p>
-                <p><b>Phone Number:</b> {active_rec.get('phone', 'N/A')}</p>
-                {f'<p><b>Delivery Notes & Location:</b> {delivery_notes}</p>' if delivery_notes else ''}
-                <hr>
-                <div class="receipt-scroll-container">
-                    <table style="width: 100%; text-align: left; border-collapse: collapse; min-width: 480px;">
-                        <tr style="border-bottom: 1px solid #ddd;"><th>Item Description</th><th>Qty</th><th>Price</th><th>Total</th><th>Stock Status</th></tr>
-            """
+            notes_html = f"<p><b>Delivery Notes & Location:</b> {delivery_notes}</p>" if delivery_notes else ""
+            
+            items_table_rows = ""
             for itm in sold_items_list:
                 i_name = itm.get('name', 'Item')
                 i_qty = itm.get('qty', 1)
@@ -1259,11 +1249,23 @@ else:
                 total_disp = f"₦{i_total:,.2f}" if i_total > 0 else "Pending"
                 
                 status_color = "#2e7d32" if "Available" in i_st and "Unavailable" not in i_st else ("#c62828" if "Unavailable" in i_st else "#f57c00")
-                
-                receipt_html += f"<tr style='border-bottom: 1px solid #eee;'><td>{i_name}</td><td>{i_qty}</td><td>{price_disp}</td><td>{total_disp}</td><td style='color:{status_color}; font-weight:bold;'>{i_st}</td></tr>"
-            
+                items_table_rows += f"<tr style='border-bottom: 1px solid #eee;'><td>{i_name}</td><td>{i_qty}</td><td>{price_disp}</td><td>{total_disp}</td><td style='color:{status_color}; font-weight:bold;'>{i_st}</td></tr>"
+
             tot_str = f"₦{active_rec.get('grand_total', 0.0):,.2f}" if active_rec.get('grand_total', 0.0) > 0 else "Pending Price Audit"
-            receipt_html += f"""
+
+            receipt_html = f"""
+            <div id="receipt-box" style="background: #ffffff; color: #000; padding: 18px; border-radius: 12px; border: 3px solid #1565c0; font-family: monospace; max-width: 650px; margin: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
+                <h2 style="text-align: center; margin: 0; color: #1565c0;">🏢 {store_title}</h2>
+                <p style="text-align: center; font-size: 0.95rem; margin: 5px 0;"><b>{rec_type}</b></p>
+                <hr>
+                <p><b>Customer Name:</b> {active_rec.get('customer', 'Customer')}</p>
+                <p><b>Phone Number:</b> {active_rec.get('phone', 'N/A')}</p>
+                {notes_html}
+                <hr>
+                <div class="receipt-scroll-container">
+                    <table style="width: 100%; text-align: left; border-collapse: collapse; min-width: 480px;">
+                        <tr style="border-bottom: 1px solid #ddd;"><th>Item Description</th><th>Qty</th><th>Price</th><th>Total</th><th>Stock Status</th></tr>
+                        {items_table_rows}
                     </table>
                 </div>
                 <hr>
@@ -1285,4 +1287,4 @@ else:
         else:
             st.info("Enter your phone number above or submit a request to load your active order portfolio receipt.")
 
-st.sidebar.caption(f"{store_title} v10.2 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v10.3 | {date.today().year}")
