@@ -30,7 +30,6 @@ def hash_password(password: str) -> str:
 def normalize_phone(phone: str) -> str:
     if not phone:
         return ""
-    # Strip spaces, dashes, and non-digit characters except leading plus if desired
     return "".join(c for c in phone if c.isdigit() or c == '+').strip()
 
 # AUTO-INITIALIZE SECURE DEFAULT ADMIN USER IF WORKERS TABLE IS EMPTY
@@ -1259,7 +1258,7 @@ else:
                 i_name = itm.get('name', 'Item')
                 i_qty = itm.get('qty', 1)
                 i_price = f"₦{itm.get('price', 0.0):,.2f}" if itm.get('price', 0.0) > 0 else "Pending"
-                i_total = f"₦{itm.get('total', 0.0):,.2f}" if idx := itm.get('total', 0.0) > 0 else "Pending"
+                i_total = f"₦{itm.get('total', 0.0):,.2f}" if itm.get('total', 0.0) > 0 else "Pending"
                 i_st = itm.get('item_status', 'Pending Audit')
                 
                 status_color = "#2e7d32" if "Available" in i_st and "Unavailable" not in i_st else ("#c62828" if "Unavailable" in i_st else "#f57c00")
@@ -1329,4 +1328,4 @@ else:
         else:
             st.info("Enter your phone number above or submit a request to load your active order portfolio receipt.")
 
-st.sidebar.caption(f"{store_title} v10.7 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v10.8 | {date.today().year}")
