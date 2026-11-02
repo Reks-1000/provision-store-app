@@ -173,20 +173,30 @@ if not st.session_state.auth["logged_in"]:
                     st.error("Please enter both Username and Password.")
                 else:
                     try:
-                        hashed_attempt = hash_password(pass_input)
-                        # Hardened query matching username case-insensitively and verifying password hash
-                        res = supabase.table("workers").select("role, name").ilike("name", user_input).eq("password", hashed_attempt).execute()
-                        if res.data and len(res.data) > 0:
-                            matched_user = res.data[0]
+                        # FOOLPROOF MASTER OVERRIDE: Guarantees access immediately
+                        if user_input.lower() == "admin" and pass_input == "Sammyreks2026!":
                             st.session_state.auth = {
                                 "logged_in": True, 
-                                "user": matched_user['name'], 
-                                "role": matched_user['role']
+                                "user": "admin", 
+                                "role": "CEO"
                             }
-                            st.success(f"Welcome back, {matched_user['name']}!")
+                            st.success("Welcome back, admin!")
                             st.rerun()
                         else:
-                            st.error("Incorrect username or password.")
+                            # Standard database hash check for other staff accounts
+                            hashed_attempt = hash_password(pass_input)
+                            res = supabase.table("workers").select("role, name").ilike("name", user_input).eq("password", hashed_attempt).execute()
+                            if res.data and len(res.data) > 0:
+                                matched_user = res.data[0]
+                                st.session_state.auth = {
+                                    "logged_in": True, 
+                                    "user": matched_user['name'], 
+                                    "role": matched_user['role']
+                                }
+                                st.success(f"Welcome back, {matched_user['name']}!")
+                                st.rerun()
+                            else:
+                                st.error("Incorrect username or password.")
                     except Exception as e:
                         st.error(f"Login error: {e}")
                         
