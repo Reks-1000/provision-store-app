@@ -906,6 +906,8 @@ else:
                 with st.form("checkout_cart_form"):
                     c_name_cart = st.text_input("Your Full Name", value=st.session_state.active_cust_name)
                     c_phone_cart = st.text_input("Your Phone Number", value=st.session_state.active_cust_phone)
+                    c_details_cart = st.text_area("📍 Delivery Address & Order Notes", placeholder="Include street address, nearest landmark, delivery preferences, or special instructions...")
+                    
                     checkout_btn = st.form_submit_button("🚀 Checkout & Generate Receipt")
                     
                     if checkout_btn:
@@ -917,7 +919,7 @@ else:
                             for item in st.session_state.cart:
                                 order_payload = {
                                     "customer": c_name_cart.strip(),
-                                    "item": f"{item['name']} ({item['unit']})",
+                                    "item": f"{item['name']} ({item['unit']})" + (f" - Note: {c_details_cart.strip()}" if c_details_cart.strip() else ""),
                                     "qty": int(item['qty']),
                                     "status": "Pending",
                                     "contact_phone": c_phone_cart.strip(),
@@ -936,6 +938,7 @@ else:
                                 "type": "Initial Customer Order Receipt", 
                                 "customer": c_name_cart.strip(),
                                 "phone": c_phone_cart.strip(), 
+                                "delivery_notes": c_details_cart.strip(),
                                 "date": get_now(),
                                 "sold_items": receipt_items, 
                                 "grand_total": cart_total, 
@@ -943,7 +946,7 @@ else:
                             }
                             st.session_state.cart = []
                             st.session_state.cust_active_page = "🧾 Receipt Portfolio"
-                            st.success("✅ Order placed successfully! View your initial receipt below.")
+                            st.success("✅ Order placed successfully! Delivery details saved.")
                             st.rerun()
                         else:
                             st.error("Please enter both Name and Phone Number.")
@@ -1040,7 +1043,8 @@ else:
         
         cust_n = st.text_input("Your Full Name", value=st.session_state.active_cust_name, key="req_name_input")
         cust_p = st.text_input("Your Phone Number", value=st.session_state.active_cust_phone, key="req_phone_input")
-        
+        c_details_req = st.text_area("📍 Delivery Address & General Notes", placeholder="Describe landmark, delivery area, or special notes...", key="req_details_input")
+
         st.markdown("---")
         st.markdown("#### 🛒 Requested Items List")
         
@@ -1075,7 +1079,7 @@ else:
                     for e in valid_entries:
                         order_payload = {
                             "customer": cust_n.strip(),
-                            "item": f"SPECIAL: {e['item'].strip()}",
+                            "item": f"SPECIAL: {e['item'].strip()}" + (f" - Note: {c_details_req.strip()}" if c_details_req.strip() else ""),
                             "qty": int(e['qty']),
                             "status": "Pending Price Audit",
                             "contact_phone": cust_p.strip(),
@@ -1097,6 +1101,7 @@ else:
                         "type": "Initial Custom Request Log Receipt",
                         "customer": cust_n.strip(),
                         "phone": cust_p.strip(),
+                        "delivery_notes": c_details_req.strip(),
                         "date": batch_timestamp,
                         "sold_items": receipt_items,
                         "grand_total": 0.0,
@@ -1228,6 +1233,7 @@ else:
         if active_rec:
             rec_type = active_rec.get('type', 'Customer Order Receipt')
             sold_items_list = active_rec.get('sold_items', [])
+            delivery_notes = active_rec.get('delivery_notes', '')
             
             receipt_html = f"""
             <div id="receipt-box" style="background: #ffffff; color: #000; padding: 18px; border-radius: 12px; border: 3px solid #1565c0; font-family: monospace; max-width: 650px; margin: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
@@ -1236,6 +1242,7 @@ else:
                 <hr>
                 <p><b>Customer Name:</b> {active_rec.get('customer', 'Customer')}</p>
                 <p><b>Phone Number:</b> {active_rec.get('phone', 'N/A')}</p>
+                {f'<p><b>Delivery Notes & Location:</b> {delivery_notes}</p>' if delivery_notes else ''}
                 <hr>
                 <div class="receipt-scroll-container">
                     <table style="width: 100%; text-align: left; border-collapse: collapse; min-width: 480px;">
@@ -1278,4 +1285,4 @@ else:
         else:
             st.info("Enter your phone number above or submit a request to load your active order portfolio receipt.")
 
-st.sidebar.caption(f"{store_title} v10.1 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v10.2 | {date.today().year}")
