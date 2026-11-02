@@ -601,7 +601,7 @@ if view_mode == "STAFF":
 
         st.divider()
 
-        st.subheader("📦 Bulk Order Batch Status Control & Consolidated Receipt")
+        st.subheader("📦 Bulk Order Batch Status Control & Itemized Status Control")
         if not df_order_list.empty:
             grouped_orders = []
             batch_mapping = {}
@@ -613,7 +613,7 @@ if view_mode == "STAFF":
                 total_sum = group['total_price'].sum() if 'total_price' in group.columns else 0.0
                 primary_status = group['status'].iloc[0] if not group['status'].empty else "Pending"
                 
-                label = f"Batch [{order_ids_str}] — {cust} ({phone}) | Status: {primary_status} | Total: ₦{total_sum:,.2f}"
+                label = f"Batch [{order_ids_str}] — {cust} ({phone}) | Total: ₦{total_sum:,.2f}"
                 batch_mapping[label] = {
                     "ids": order_ids_list,
                     "customer": cust,
@@ -639,53 +639,89 @@ if view_mode == "STAFF":
             
             st.divider()
 
-            with st.expander("⚡ Bulk Update Batch Orders & Generate Consolidated Receipt", expanded=True):
-                selected_batch_label = st.selectbox("Select Customer Order Batch to Update All Together", list(batch_mapping.keys()))
+            with st.expander("⚡ Item-by-Item Batch Status Control & Consolidated Receipt", expanded=True):
+                selected_batch_label = st.selectbox("Select Customer Order Batch to Manage Item Statuses", list(batch_mapping.keys()))
                 chosen_batch = batch_mapping[selected_batch_label]
                 
-                st.write(f"**Selected Orders in Batch:** `#{', '.join(map(str, chosen_batch['ids']))}` for **{chosen_batch['customer']}**")
-                
-                bulk_status = st.selectbox("Update ALL Orders in this Batch To:", ["Pending", "In Progress", "Ready", "Delivered", "Cancelled", "Order Placed & Confirmed"])
-                
-                col_b1, col_b2 = st.columns(2)
-                with col_b1:
-                    if st.button("🚀 Apply Status to ALL Orders in Batch", use_container_width=True):
-                        for oid in chosen_batch['ids']:
-                            supabase.table("orders").update({"status": bulk_status}).eq("id", oid).execute()
-                        st.success(f"Successfully updated orders #{', '.join(map(str, chosen_batch['ids']))} to '{bulk_status}'!")
-                        st.rerun()
-                with col_b2:
-                    if st.button("🧾 Generate Consolidated Batch Receipt View", use_container_width=True):
-                        batch_items_receipt = []
-                        batch_total = 0.0
-                        for _, row_item in chosen_batch['group'].iterrows():
-                            itm_qty = row_item.get('qty', 1)
-                            itm_tot = row_item.get('total_price', 0.0)
-                            itm_price = itm_tot / itm_qty if itm_qty > 0 else 0.0
-                            batch_items_receipt.append({
-                                "name": str(row_item.get('item', '')).replace("SPECIAL:", "").strip(),
-                                "unit": "Batch Item",
-                                "qty": itm_qty,
-                                "price": itm_price,
-                                "total": itm_tot,
-                                "item_status": row_item.get('status', 'Pending')
-                            })
-                            batch_total += itm_tot
+                st.write(f"### Managing Batch Orders: `#{', '.join(map(str, chosen_batch['ids']))}` for **{chosen_batch['customer']}**")
+                st.caption("Set a specific status for each item individually below:")
 
-                        st.session_state.last_receipt = {
-                            "type": f"Consolidated Batch Receipt (Orders #{', '.join(map(str, chosen_batch['ids']))})",
-                            "customer": chosen_batch['customer'],
-                            "phone": chosen_batch['phone'],
-                            "date": chosen_batch['timestamp'],
-                            "sold_items": batch_items_receipt,
-                            "grand_total": batch_total,
-                            "status": bulk_status
-                        }
-                        st.success("Consolidated batch receipt generated successfully! Scroll up to POS & Sales counter view to inspect or share it.")
+                with st.form("itemized_batch_status_form"):
+                    item_status_payloads = []
+                    batch_total_calc = 0.0
+
+                    for _, row in chosen_batch['group'].iterrows():
+                        st.markdown("---")
+                        row_id = int(row['id'])
+                        row_item_name = str(row['item'])
+                        row_qty = row['qty']
+                        row_tot = row['total_price']
+                        current_row_status = str(row['status'])
+
+                        st.markdown(f"#### Order ID `#{row_id}`: **{row_item_name}** (Qty: `{row_qty}` | Total: ₦{row_tot:,.2f})")
+                        
+                        col_st1, col_st2 = st.columns([2, 1])
+                        with col_st1:
+                            # You can pick a quick status or type your own custom choice!
+                            preset_choice = st.selectbox(
+                                f"Select Status for #{row_id}", 
+                                ["Delivered", "Available", "Yet to be available", "Out of Stock", "Restocking Soon", "In Progress", "Ready", "Cancelled", "Custom..."],
+                                key=f"preset_st_{row_id}"
+                            )
+                        with col_st2:
+                            if preset_choice == "Custom...":
+                                final_status_val = st.text_input(f"Type Custom Status #{row_id}", value=current_row_status, key=f"custom_st_{row_id}")
+                            else:
+                                final_status_val = preset_choice
+
+                        item_status_payloads.append({
+                            "id": row_id,
+                            "status": final_status_val
+                        })
+                        batch_total_calc += row_tot
+
+                    st.markdown("---")
+                    col_sub1, col_sub2 = st.columns(2)
+                    with col_sub1:
+                        apply_itemized_btn = st.form_submit_button("💾 Save Item-by-Item Statuses", use_container_width=True)
+                    with col_sub2:
+                        generate_receipt_btn = st.form_submit_button("🧾 Save Statuses & Generate Consolidated Receipt", use_container_width=True)
+
+                    if apply_itemized_btn or generate_receipt_btn:
+                        for p_item in item_status_payloads:
+                            supabase.table("orders").update({"status": p_item['status']}).eq("id", p_item['id']).execute()
+                        
+                        if generate_receipt_btn:
+                            receipt_items_final = []
+                            for _, row_item in chosen_batch['group'].iterrows():
+                                r_id = int(row_item['id'])
+                                matching_status = next((p['status'] for p in item_status_payloads if p['id'] == r_id), "Pending")
+                                r_qty = row_item.get('qty', 1)
+                                r_tot = row_item.get('total_price', 0.0)
+                                receipt_items_final.append({
+                                    "name": str(row_item.get('item', '')).replace("SPECIAL:", "").strip(),
+                                    "unit": "Item",
+                                    "qty": r_qty,
+                                    "price": r_tot / r_qty if r_qty > 0 else 0.0,
+                                    "total": r_tot,
+                                    "item_status": matching_status
+                                })
+
+                            st.session_state.last_receipt = {
+                                "type": f"Consolidated Batch Receipt (Orders #{', '.join(map(str, chosen_batch['ids']))})",
+                                "customer": chosen_batch['customer'],
+                                "phone": chosen_batch['phone'],
+                                "date": chosen_batch['timestamp'],
+                                "sold_items": receipt_items_final,
+                                "grand_total": batch_total_calc,
+                                "status": "Updated"
+                            }
+                            st.success("Item statuses saved & consolidated batch receipt generated successfully!")
+                        else:
+                            st.success("Item statuses updated successfully for all selected orders!")
                         st.rerun()
         else:
             st.info("No customer orders found yet.")
-
     # TAB 4: CUSTOMER CHATS
     with tabs[4]:
         st.header("💬 Live Customer Communication")
