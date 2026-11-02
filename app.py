@@ -1131,19 +1131,23 @@ else:
                             st.caption(f"📂 Category: **{s_row.get('category', 'General')}** | 📍 Shelf: {s_row.get('shelf', 'N/A')}")
                             st.write(s_row.get('description', ''))
                             
+                            # CORRECTED VIDEO LINK / BLOB HANDLING BLOCK
+                            vid_link = str(s_row.get('video_url', '')).strip()
                             has_direct_vid = s_row.get('video_data') and str(s_row['video_data']).strip() not in ["None", "", "nan"]
-                            has_url_vid = s_row.get('video_url') and str(s_row['video_url']).strip() not in ["None", "", "nan"]
+                            has_url_vid = vid_link and vid_link.lower() not in ["none", "", "nan"]
 
                             if has_direct_vid or has_url_vid:
                                 with st.expander("🎥 Watch Video Advert"):
-                                    if has_direct_vid:
+                                    if has_url_vid and vid_link.startswith("http"):
+                                        st.video(vid_link)
+                                    elif has_direct_vid:
                                         try:
                                             vid_bytes = base64.b64decode(s_row['video_data'])
                                             st.video(vid_bytes)
                                         except Exception:
                                             st.error("Video file error.")
-                                    elif has_url_vid:
-                                        st.video(s_row['video_url'])
+                                    else:
+                                        st.info("Invalid video link format.")
                                     
                         with col_order:
                             m_lbl = s_row.get('unit_main_label', 'Carton') or 'Carton'
@@ -1388,4 +1392,4 @@ else:
         else:
             st.info("Enter your phone number above to inspect all your past independent receipts and active transaction histories.")
 
-st.sidebar.caption(f"{store_title} v14.0 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v14.1 | {date.today().year}")
