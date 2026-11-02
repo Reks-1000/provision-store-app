@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 from supabase import create_client, Client
 from datetime import datetime, date
@@ -316,54 +317,29 @@ if view_mode == "STAFF":
             rec_type = rec.get('type', 'Official Receipt')
             sold_items_list = rec.get('sold_items', rec.get('items', []))
 
-            rows_html = ""
-            for itm in sold_items_list:
-                i_name = f"{itm.get('name', 'Item')} ({itm.get('unit', 'Unit')})"
-                i_qty = itm.get('qty', 1)
-                i_price = f"₦{itm.get('price', 0.0):,.2f}"
-                i_total = f"₦{itm.get('total', 0.0):,.2f}"
-                rows_html += f"""
-                <tr style="border-bottom: 1px solid #e0e0e0;">
-                    <td style="padding: 10px; font-weight: 500;">{i_name}</td>
-                    <td style="padding: 10px; text-align: center;">{i_qty}</td>
-                    <td style="padding: 10px; text-align: right;">{i_price}</td>
-                    <td style="padding: 10px; text-align: right; font-weight: bold;">{i_total}</td>
-                </tr>
-                """
+            rows_html = "".join([
+                f"<tr style='border-bottom:1px solid #e0e0e0;'><td style='padding:10px;'>{itm.get('name','Item')} ({itm.get('unit','Unit')})</td><td style='padding:10px;text-align:center;'>{itm.get('qty',1)}</td><td style='padding:10px;text-align:right;'>₦{itm.get('price',0.0):,.2f}</td><td style='padding:10px;text-align:right;font-weight:bold;'>₦{itm.get('total',0.0):,.2f}</td></tr>"
+                for itm in sold_items_list
+            ])
 
-            st.markdown(f"""
-            <div style="background: #ffffff; color: #111; padding: 24px; border-radius: 12px; border: 2.5px solid #1565c0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 650px; margin: 10px auto; box-shadow: 0 4px 15px rgba(0,0,0,0.08);">
-                <div style="text-align: center; margin-bottom: 15px;">
-                    <h2 style="margin: 0; color: #1565c0; font-size: 1.6rem; font-weight: 700;">🏢 {store_title}</h2>
-                    <p style="margin: 4px 0 0 0; color: #555; font-size: 0.95rem; font-weight: 600;">{rec_type}</p>
-                </div>
-                <hr style="border: none; border-top: 1px solid #ddd; margin: 15px 0;">
-                <div style="margin-bottom: 15px; font-size: 0.95rem; line-height: 1.6;">
-                    <p style="margin: 3px 0;"><b>Customer Name:</b> {rec.get('customer', 'Walk-in Customer')}</p>
-                    <p style="margin: 3px 0;"><b>Phone Number:</b> {rec.get('phone', 'N/A')}</p>
-                    <p style="margin: 3px 0;"><b>Date/Time:</b> {rec.get('date', '')} | <b>Staff:</b> {rec.get('cashier', 'Staff')}</p>
-                </div>
-                <hr style="border: none; border-top: 1px solid #ddd; margin: 15px 0;">
-                <div style="overflow-x: auto;">
-                    <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-bottom: 10px;">
-                        <thead>
-                            <tr style="background-color: #f5f7fa; border-bottom: 2px solid #ddd; color: #333;">
-                                <th style="padding: 10px; text-align: left;">Item Description</th>
-                                <th style="padding: 10px; text-align: center;">Qty</th>
-                                <th style="padding: 10px; text-align: right;">Unit Price</th>
-                                <th style="padding: 10px; text-align: right;">Total</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {rows_html}
-                        </tbody>
-                    </table>
-                </div>
-                <hr style="border: none; border-top: 1px solid #ddd; margin: 15px 0;">
-                <h3 style="text-align: right; color: #1565c0; margin: 10px 0; font-size: 1.3rem;">Grand Total: ₦{rec.get('grand_total', 0.0):,.2f}</h3>
+            html_code = f"""
+            <div style="background:#ffffff;color:#111;padding:24px;border-radius:12px;border:2.5px solid #1565c0;font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:620px;margin:auto;">
+                <div style="text-align:center;"><h2 style="margin:0;color:#1565c0;">🏢 {store_title}</h2><p style="margin:4px 0;color:#555;font-weight:600;">{rec_type}</p></div>
+                <hr style="border:none;border-top:1px solid #ddd;margin:15px 0;">
+                <p style="margin:4px 0;"><b>Customer Name:</b> {rec.get('customer','Walk-in Customer')}</p>
+                <p style="margin:4px 0;"><b>Phone Number:</b> {rec.get('phone','N/A')}</p>
+                <p style="margin:4px 0;"><b>Date/Time:</b> {rec.get('date','')} | <b>Staff:</b> {rec.get('cashier','Staff')}</p>
+                <hr style="border:none;border-top:1px solid #ddd;margin:15px 0;">
+                <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+                    <thead><tr style="background:#f5f7fa;border-bottom:2px solid #ddd;"><th style="padding:10px;text-align:left;">Item</th><th style="padding:10px;text-align:center;">Qty</th><th style="padding:10px;text-align:right;">Price</th><th style="padding:10px;text-align:right;">Total</th></tr></thead>
+                    <tbody>{rows_html}</tbody>
+                </table>
+                <hr style="border:none;border-top:1px solid #ddd;margin:15px 0;">
+                <h3 style="text-align:right;color:#1565c0;margin:10px 0;">Grand Total: ₦{rec.get('grand_total',0.0):,.2f}</h3>
             </div>
-            """, unsafe_allow_html=True)
-            
+            """
+            components.html(html_code, height=360 + (len(sold_items_list) * 45), scrolling=True)
+
             if st.button("❌ Close Receipt View"):
                 st.session_state.last_receipt = None
                 st.rerun()
@@ -1276,23 +1252,23 @@ else:
 
             tot_str = f"₦{active_rec.get('grand_total', 0.0):,.2f}" if active_rec.get('grand_total', 0.0) > 0 else "Pending Price Audit"
 
-            full_card_html = f"""
-            <div style="background: #ffffff; color: #111; padding: 24px; border-radius: 12px; border: 2.5px solid #1565c0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 650px; margin: 10px auto; box-shadow: 0 4px 15px rgba(0,0,0,0.08);">
-                <div style="text-align: center; margin-bottom: 15px;">
-                    <h2 style="margin: 0; color: #1565c0; font-size: 1.6rem; font-weight: 700;">🏢 {store_title}</h2>
-                    <p style="margin: 4px 0 0 0; color: #555; font-size: 0.95rem; font-weight: 600;">{rec_type}</p>
+            full_receipt_html = f"""
+            <div style="background: #ffffff; color: #111; padding: 24px; border-radius: 12px; border: 2.5px solid #1565c0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 620px; margin: 0 auto; box-shadow: 0 4px 15px rgba(0,0,0,0.08);">
+                <div style="text-align: center;">
+                    <h2 style="margin: 0; color: #1565c0; font-size: 1.6rem;">🏢 {store_title}</h2>
+                    <p style="margin: 4px 0 0 0; color: #555; font-weight: 600;">{rec_type}</p>
                 </div>
                 <hr style="border: none; border-top: 1px solid #ddd; margin: 15px 0;">
-                <div style="margin-bottom: 15px; font-size: 0.95rem; line-height: 1.6;">
+                <div style="font-size: 0.95rem; line-height: 1.6;">
                     <p style="margin: 4px 0;"><b>Customer Name:</b> {active_rec.get('customer', 'Customer')}</p>
                     <p style="margin: 4px 0;"><b>Phone Number:</b> {active_rec.get('phone', 'N/A')}</p>
                     {notes_html}
                 </div>
                 <hr style="border: none; border-top: 1px solid #ddd; margin: 15px 0;">
                 <div style="overflow-x: auto;">
-                    <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-bottom: 10px;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
                         <thead>
-                            <tr style="background-color: #f5f7fa; border-bottom: 2px solid #ddd; color: #333;">
+                            <tr style="background-color: #f5f7fa; border-bottom: 2px solid #ddd;">
                                 <th style="padding: 10px; text-align: left;">Item Description</th>
                                 <th style="padding: 10px; text-align: center;">Qty</th>
                                 <th style="padding: 10px; text-align: right;">Price</th>
@@ -1306,15 +1282,17 @@ else:
                     </table>
                 </div>
                 <hr style="border: none; border-top: 1px solid #ddd; margin: 15px 0;">
-                <h3 style="text-align: right; color: #1565c0; margin: 10px 0; font-size: 1.3rem;">Total: {tot_str}</h3>
-                <p style="text-align: center; color: #666; font-size: 0.82rem; margin-top: 18px; line-height: 1.4;">
+                <h3 style="text-align: right; color: #1565c0; margin: 10px 0;">Total: {tot_str}</h3>
+                <p style="text-align: center; color: #666; font-size: 0.82rem; margin-top: 18px;">
                     Thank you for shopping with Sammyreks Business Center!<br>
                     <i>This portfolio automatically updates item-by-item prices and availability status.</i>
                 </p>
             </div>
             """
             
-            st.markdown(full_card_html, unsafe_allow_html=True)
+            # Dynamic height calculation prevents internal iframe scrollbars
+            calc_height = 420 + (len(sold_items_list) * 45) + (60 if delivery_notes else 0)
+            components.html(full_receipt_html, height=calc_height, scrolling=True)
 
             if available_order_ids:
                 st.markdown("---")
@@ -1328,4 +1306,4 @@ else:
         else:
             st.info("Enter your phone number above or submit a request to load your active order portfolio receipt.")
 
-st.sidebar.caption(f"{store_title} v10.5 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v10.6 | {date.today().year}")
