@@ -117,11 +117,6 @@ st.markdown("""
             font-weight: bold !important;
             padding: 12px 18px !important;
         }
-        .receipt-scroll-container {
-            width: 100%;
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -331,19 +326,21 @@ if view_mode == "STAFF":
                 <p><b>Customer:</b> {rec.get('customer', 'Customer')} | <b>Phone:</b> {rec.get('phone', 'N/A')}</p>
                 <p><b>Date/Time:</b> {rec.get('date', '')} | <b>Staff:</b> {rec.get('cashier', 'Staff')}</p>
                 <hr>
-                <table style="width: 100%; text-align: left;">
-                    <tr><th>Item</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr>
+            </div>
             """, unsafe_allow_html=True)
+            
+            pos_df_data = []
             for itm in sold_items_list:
-                i_name = itm.get('name', 'Item')
-                i_unit = itm.get('unit', 'Unit')
-                i_qty = itm.get('qty', 1)
-                i_price = itm.get('price', 0.0)
-                i_total = itm.get('total', 0.0)
-                st.markdown(f"<tr><td>{i_name} ({i_unit})</td><td>{i_qty}</td><td>₦{i_price:,.2f}</td><td>₦{i_total:,.2f}</td></tr>", unsafe_allow_html=True)
+                pos_df_data.append({
+                    "Item": f"{itm.get('name', 'Item')} ({itm.get('unit', 'Unit')})",
+                    "Qty": itm.get('qty', 1),
+                    "Unit Price": f"₦{itm.get('price', 0.0):,.2f}",
+                    "Total": f"₦{itm.get('total', 0.0):,.2f}"
+                })
+            st.dataframe(pd.DataFrame(pos_df_data), use_container_width=True, hide_index=True)
+
             st.markdown(f"""
-                </table>
-                <hr>
+            <div style="background: #ffffff; color: #000; padding: 10px; border-radius: 10px; border: 2px solid #1565c0; font-family: monospace;">
                 <h3 style="text-align: right; color: #1565c0;">Grand Total: ₦{rec.get('grand_total', 0.0):,.2f}</h3>
             </div>
             """, unsafe_allow_html=True)
@@ -1235,45 +1232,40 @@ else:
             sold_items_list = active_rec.get('sold_items', [])
             delivery_notes = active_rec.get('delivery_notes', '')
             
-            notes_html = f"<p><b>Delivery Notes & Location:</b> {delivery_notes}</p>" if delivery_notes else ""
-            
-            items_table_rows = ""
+            st.markdown(f"""
+            <div style="background: #ffffff; color: #000; padding: 20px; border-radius: 12px; border: 3px solid #1565c0; font-family: monospace; max-width: 650px; margin: auto;">
+                <h2 style="text-align: center; margin: 0; color: #1565c0;">🏢 {store_title}</h2>
+                <p style="text-align: center; font-size: 0.95rem; margin: 5px 0;"><b>{rec_type}</b></p>
+                <hr style="border: 1px solid #ddd;">
+                <p><b>Customer Name:</b> {active_rec.get('customer', 'Customer')}</p>
+                <p><b>Phone Number:</b> {active_rec.get('phone', 'N/A')}</p>
+            """, unsafe_allow_html=True)
+
+            if delivery_notes:
+                st.markdown(f"<p><b>Delivery Notes & Location:</b> {delivery_notes}</p>", unsafe_allow_html=True)
+
+            st.markdown("<hr style='border: 1px solid #ddd;'>", unsafe_allow_html=True)
+
+            receipt_df_data = []
             for itm in sold_items_list:
-                i_name = itm.get('name', 'Item')
-                i_qty = itm.get('qty', 1)
-                i_price = itm.get('price', 0.0)
-                i_total = itm.get('total', 0.0)
-                i_st = itm.get('item_status', 'Pending Audit')
-                
-                price_disp = f"₦{i_price:,.2f}" if i_price > 0 else "Pending"
-                total_disp = f"₦{i_total:,.2f}" if i_total > 0 else "Pending"
-                
-                status_color = "#2e7d32" if "Available" in i_st and "Unavailable" not in i_st else ("#c62828" if "Unavailable" in i_st else "#f57c00")
-                items_table_rows += f"<tr style='border-bottom: 1px solid #eee;'><td>{i_name}</td><td>{i_qty}</td><td>{price_disp}</td><td>{total_disp}</td><td style='color:{status_color}; font-weight:bold;'>{i_st}</td></tr>"
+                receipt_df_data.append({
+                    "Item Description": itm.get('name', 'Item'),
+                    "Qty": itm.get('qty', 1),
+                    "Price": f"₦{itm.get('price', 0.0):,.2f}" if itm.get('price', 0.0) > 0 else "Pending",
+                    "Total": f"₦{itm.get('total', 0.0):,.2f}" if itm.get('total', 0.0) > 0 else "Pending",
+                    "Status": itm.get('item_status', 'Pending Audit')
+                })
+            
+            st.dataframe(pd.DataFrame(receipt_df_data), use_container_width=True, hide_index=True)
 
             tot_str = f"₦{active_rec.get('grand_total', 0.0):,.2f}" if active_rec.get('grand_total', 0.0) > 0 else "Pending Price Audit"
 
-            receipt_html = f"""
-            <div id="receipt-box" style="background: #ffffff; color: #000; padding: 18px; border-radius: 12px; border: 3px solid #1565c0; font-family: monospace; max-width: 650px; margin: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
-                <h2 style="text-align: center; margin: 0; color: #1565c0;">🏢 {store_title}</h2>
-                <p style="text-align: center; font-size: 0.95rem; margin: 5px 0;"><b>{rec_type}</b></p>
-                <hr>
-                <p><b>Customer Name:</b> {active_rec.get('customer', 'Customer')}</p>
-                <p><b>Phone Number:</b> {active_rec.get('phone', 'N/A')}</p>
-                {notes_html}
-                <hr>
-                <div class="receipt-scroll-container">
-                    <table style="width: 100%; text-align: left; border-collapse: collapse; min-width: 480px;">
-                        <tr style="border-bottom: 1px solid #ddd;"><th>Item Description</th><th>Qty</th><th>Price</th><th>Total</th><th>Stock Status</th></tr>
-                        {items_table_rows}
-                    </table>
-                </div>
-                <hr>
+            st.markdown(f"""
+                <hr style="border: 1px solid #ddd;">
                 <h3 style="text-align: right; color: #1565c0;">Total: {tot_str}</h3>
-                <p style="text-align: center; font-size: 0.85rem; margin-top: 20px;">Thank you for shopping with Sammyreks Business Center!<br><i>This portfolio automatically updates item-by-item prices and availability status.</i></p>
+                <p style="text-align: center; font-size: 0.85rem; margin-top: 15px;">Thank you for shopping with Sammyreks Business Center!<br><i>This portfolio automatically updates item-by-item prices and availability status.</i></p>
             </div>
-            """
-            st.markdown(receipt_html, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
             if available_order_ids:
                 st.markdown("---")
@@ -1287,4 +1279,4 @@ else:
         else:
             st.info("Enter your phone number above or submit a request to load your active order portfolio receipt.")
 
-st.sidebar.caption(f"{store_title} v10.3 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v10.4 | {date.today().year}")
