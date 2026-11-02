@@ -235,7 +235,7 @@ if view_mode == "STAFF":
     with tabs[1]:
         st.header("💳 POS & Sales Counter")
         try:
-            res_pos = supabase.table("products").select("*").gt("qty_cartons", 0).execute()
+            res_pos = supabase.table("products").select("*").execute()
             df_p_pos = pd.DataFrame(res_pos.data) if res_pos.data else pd.DataFrame()
         except Exception:
             df_p_pos = pd.DataFrame()
@@ -972,7 +972,7 @@ else:
                     st.rerun()
 
         try:
-            res_shop = supabase.table("products").select("*").gt("qty_cartons", 0).execute()
+            res_shop = supabase.table("products").select("*").execute()
             df_shop = pd.DataFrame(res_shop.data) if res_shop.data else pd.DataFrame()
         except Exception:
             df_shop = pd.DataFrame()
@@ -1328,4 +1328,4 @@ else:
         else:
             st.info("Enter your phone number above or submit a request to load your active order portfolio receipt.")
 
-st.sidebar.caption(f"{store_title} v10.8 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v10.9 | {date.today().year}")
