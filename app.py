@@ -174,6 +174,7 @@ if not st.session_state.auth["logged_in"]:
                 else:
                     try:
                         hashed_attempt = hash_password(pass_input)
+                        # Hardened query matching username case-insensitively and verifying password hash
                         res = supabase.table("workers").select("role, name").ilike("name", user_input).eq("password", hashed_attempt).execute()
                         if res.data and len(res.data) > 0:
                             matched_user = res.data[0]
@@ -1328,4 +1329,4 @@ else:
         else:
             st.info("Enter your phone number above or submit a request to load your active order portfolio receipt.")
 
-st.sidebar.caption(f"{store_title} v10.9 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v11.0 | {date.today().year}")
