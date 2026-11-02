@@ -7,6 +7,7 @@ import base64
 from io import BytesIO
 from PIL import Image
 import math
+import hashlib
 
 # ==========================================
 # 1. DATABASE SYSTEM & INITIALIZATION (SUPABASE)
@@ -23,14 +24,23 @@ except Exception as e:
     st.error(f"Database connection failed. Please verify Streamlit Cloud Secrets! Error: {e}")
     st.stop()
 
-# AUTO-INITIALIZE DEFAULT ADMIN USER IF TABLES ARE EMPTY
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+
+def normalize_phone(phone: str) -> str:
+    if not phone:
+        return ""
+    # Strip spaces, dashes, and non-digit characters except leading plus if desired
+    return "".join(c for c in phone if c.isdigit() or c == '+').strip()
+
+# AUTO-INITIALIZE SECURE DEFAULT ADMIN USER IF WORKERS TABLE IS EMPTY
 try:
     check_empty = supabase.table("workers").select("*").execute()
     if not check_empty.data:
         supabase.table("workers").insert({
             "name": "admin", 
             "role": "CEO", 
-            "password": "1234"
+            "password": hash_password("Sammyreks2026!")
         }).execute()
 except Exception:
     pass
@@ -47,9 +57,12 @@ def fetch_dataframe(table_name):
 # ==========================================
 # 2. CORE UTILITY FUNCTIONS (HD IMAGES & RECEIPTS)
 # ==========================================
-def get_image_base64(uploaded_file):
+def get_image_base64(uploaded_file, max_size_mb=2):
     if uploaded_file is not None:
         try:
+            if uploaded_file.size > max_size_mb * 1024 * 1024:
+                st.error(f"Image file exceeds {max_size_mb}MB limit. Please upload a smaller image.")
+                return None
             if isinstance(uploaded_file, Image.Image):
                 img = uploaded_file
             else:
@@ -59,7 +72,7 @@ def get_image_base64(uploaded_file):
                 img = img.convert("RGB")
                 
             buffered = BytesIO()
-            img.save(buffered, format="JPEG", quality=100, subsampling=0)
+            img.save(buffered, format="JPEG", quality=85, subsampling=0)
             return base64.b64encode(buffered.getvalue()).decode()
         except Exception:
             return None
@@ -73,9 +86,12 @@ def display_image_base64(base64_str):
             return None
     return None
 
-def get_file_base64(uploaded_file):
+def get_file_base64(uploaded_file, max_size_mb=10):
     if uploaded_file is not None:
         try:
+            if uploaded_file.size > max_size_mb * 1024 * 1024:
+                st.error(f"Video file exceeds {max_size_mb}MB limit.")
+                return None
             return base64.b64encode(uploaded_file.read()).decode()
         except Exception:
             return None
@@ -103,7 +119,6 @@ def sanitize_payload(payload):
 # ==========================================
 st.set_page_config(page_title="Sammyreks Business Center", layout="wide", page_icon="🏢")
 
-# Custom Responsive Styling for Mobile Devices
 st.markdown("""
     <style>
         .stButton>button {
@@ -159,7 +174,8 @@ if not st.session_state.auth["logged_in"]:
                     st.error("Please enter both Username and Password.")
                 else:
                     try:
-                        res = supabase.table("workers").select("role, name").ilike("name", user_input).eq("password", pass_input).execute()
+                        hashed_attempt = hash_password(pass_input)
+                        res = supabase.table("workers").select("role, name").ilike("name", user_input).eq("password", hashed_attempt).execute()
                         if res.data and len(res.data) > 0:
                             matched_user = res.data[0]
                             st.session_state.auth = {
@@ -238,7 +254,7 @@ if view_mode == "STAFF":
                 sale_unit = st.radio("Selling Unit", [m_label, p_label, r_label])
                 sale_qty = st.number_input("Quantity", min_value=1, value=1)
                 c_name_pos = st.text_input("Customer Name")
-                c_phone_pos = st.text_input("Customer Phone Number")
+                c_phone_pos = normalize_phone(st.text_input("Customer Phone Number"))
             with col_pos2:
                 up = p['price_carton'] if sale_unit == m_label else (p['price_pack'] if sale_unit == p_label else p['price_retail'])
                 grand_total = up * sale_qty
@@ -368,7 +384,7 @@ if view_mode == "STAFF":
                 "category": "General"
             }
         
-        st.write("📷 **Product Image Input (Crisp HD Quality)**")
+        st.write("📷 **Product Image Input (Compressed HD Quality, Max 2MB)**")
         img_tab1, img_tab2 = st.tabs(["📁 Upload Image File", "📋 Paste from Clipboard"])
         chosen_image = None
 
@@ -394,8 +410,8 @@ if view_mode == "STAFF":
                 st.info("Paste from clipboard component not available.")
 
         st.divider()
-        st.write("🎥 **Product Video Advert Input**")
-        vid_file = st.file_uploader("Upload Direct MP4 Video File (Max 10MB)", type=["mp4", "mov", "webm"])
+        st.write("🎥 **Product Video Advert Input (Max 10MB)**")
+        vid_file = st.file_uploader("Upload Direct MP4 Video File", type=["mp4", "mov", "webm"])
 
         with st.form("inventory_form"):
             st.info("✏️ **Category & Box Headings**: Type any category name of your choice below.")
@@ -694,7 +710,7 @@ if view_mode == "STAFF":
         st.subheader("➕ Log New Debt")
         with st.form("debt_form"):
             debt_c = st.text_input("Customer Name")
-            debt_p = st.text_input("Phone")
+            debt_p = normalize_phone(st.text_input("Phone"))
             debt_i = st.text_area("Evidence (Items Bought)")
             debt_a = st.number_input("Amount (₦)", 0.0)
             if st.form_submit_button("Log New Debt"):
@@ -747,13 +763,14 @@ if view_mode == "STAFF":
             if st.button("💾 Save General Advert Video"):
                 try:
                     vid_encoded = get_file_base64(gen_vid_file)
-                    chk_setting = supabase.table("app_settings").select("*").eq("key", "general_video").execute()
-                    if chk_setting.data:
-                        supabase.table("app_settings").update({"value": vid_encoded}).eq("key", "general_video").execute()
-                    else:
-                        supabase.table("app_settings").insert({"key": "general_video", "value": vid_encoded}).execute()
-                    st.success("General awareness video updated successfully!")
-                    st.rerun()
+                    if vid_encoded:
+                        chk_setting = supabase.table("app_settings").select("*").eq("key", "general_video").execute()
+                        if chk_setting.data:
+                            supabase.table("app_settings").update({"value": vid_encoded}).eq("key", "general_video").execute()
+                        else:
+                            supabase.table("app_settings").insert({"key": "general_video", "value": vid_encoded}).execute()
+                        st.success("General awareness video updated successfully!")
+                        st.rerun()
                 except Exception as ex:
                     st.error(f"Failed to save video: {ex}")
 
@@ -764,15 +781,15 @@ if view_mode == "STAFF":
             new_p = st.text_input("New Password", type="password")
             confirm_p = st.text_input("Confirm New Password", type="password")
             if st.form_submit_button("Update Password"):
-                verify = supabase.table("workers").select("*").ilike("name", user_logged).eq("password", old_p).execute()
+                verify = supabase.table("workers").select("*").ilike("name", user_logged).eq("password", hash_password(old_p)).execute()
                 if not verify.data:
                     st.error("Current password is incorrect.")
                 elif new_p != confirm_p:
                     st.error("New passwords do not match.")
-                elif len(new_p) < 4:
-                    st.error("Password too short.")
+                elif len(new_p) < 6:
+                    st.error("Password too short (minimum 6 characters).")
                 else:
-                    supabase.table("workers").update({"password": new_p}).ilike("name", user_logged).execute()
+                    supabase.table("workers").update({"password": hash_password(new_p)}).ilike("name", user_logged).execute()
                     st.success("Password updated securely in cloud database!")
 
     # CEO TABS
@@ -795,18 +812,22 @@ if view_mode == "STAFF":
             st.header("👥 Staff Management")
             df_workers = fetch_dataframe("workers")
             if not df_workers.empty:
-                st.dataframe(df_workers, use_container_width=True, hide_index=True)
+                st.dataframe(df_workers.drop(columns=['password'], errors='ignore'), use_container_width=True, hide_index=True)
             col_w1, col_w2 = st.columns(2)
             with col_w1:
                 st.subheader("Add New Worker")
                 with st.form("worker_add"):
                     w_n = st.text_input("Worker Name")
                     w_r = st.selectbox("Role", ["Staff", "CEO"])
-                    w_p = st.text_input("Set Password", type="password")
+                    w_p = st.text_input("Set Password (Min 6 chars)", type="password")
                     if st.form_submit_button("Create Account"):
                         try:
-                            supabase.table("workers").insert({"name": w_n, "role": w_r, "password": w_p}).execute()
-                            st.rerun()
+                            if len(w_p) < 6:
+                                st.error("Password must be at least 6 characters.")
+                            else:
+                                supabase.table("workers").insert({"name": w_n, "role": w_r, "password": hash_password(w_p)}).execute()
+                                st.success("Worker created successfully!")
+                                st.rerun()
                         except Exception:
                             st.error("Worker exists or entry error.")
             with col_w2:
@@ -815,8 +836,11 @@ if view_mode == "STAFF":
                     target_worker = st.selectbox("Select Worker", df_workers['name']) if not df_workers.empty else st.selectbox("Select Worker", ["None"])
                     new_reset_p = st.text_input("New Temporary Password", type="password")
                     if st.form_submit_button("Reset Password"):
-                        supabase.table("workers").update({"password": new_reset_p}).ilike("name", target_worker).execute()
-                        st.success("Password reset successfully.")
+                        if len(new_reset_p) < 6:
+                            st.error("Password must be at least 6 characters.")
+                        else:
+                            supabase.table("workers").update({"password": hash_password(new_reset_p)}).ilike("name", target_worker).execute()
+                            st.success("Password reset successfully.")
 
 # ==========================================
 # 5. MOBILE-FRIENDLY CUSTOMER PORTAL
@@ -898,7 +922,7 @@ else:
                 
                 with st.form("checkout_cart_form"):
                     c_name_cart = st.text_input("Your Full Name", value=st.session_state.active_cust_name)
-                    c_phone_cart = st.text_input("Your Phone Number", value=st.session_state.active_cust_phone)
+                    c_phone_cart = normalize_phone(st.text_input("Your Phone Number", value=st.session_state.active_cust_phone))
                     c_details_cart = st.text_area("📍 Delivery Address & Order Notes", placeholder="Include street address, nearest landmark, delivery preferences, or special instructions...")
                     
                     checkout_btn = st.form_submit_button("🚀 Checkout & Generate Receipt")
@@ -1035,7 +1059,7 @@ else:
         st.caption("Enter each item name and quantity separately below:")
         
         cust_n = st.text_input("Your Full Name", value=st.session_state.active_cust_name, key="req_name_input")
-        cust_p = st.text_input("Your Phone Number", value=st.session_state.active_cust_phone, key="req_phone_input")
+        cust_p = normalize_phone(st.text_input("Your Phone Number", value=st.session_state.active_cust_phone, key="req_phone_input"))
         c_details_req = st.text_area("📍 Delivery Address & General Notes", placeholder="Describe landmark, delivery area, or special notes...", key="req_details_input")
 
         st.markdown("---")
@@ -1112,7 +1136,7 @@ else:
     # PAGE 3: TRACK ORDER
     elif st.session_state.cust_active_page == "🔍 Track Order":
         st.subheader("🔍 Track Order Status")
-        track_phone = st.text_input("Enter your Phone Number to check status", value=st.session_state.active_cust_phone)
+        track_phone = normalize_phone(st.text_input("Enter your Phone Number to check status", value=st.session_state.active_cust_phone))
         if track_phone.strip():
             st.session_state.active_cust_phone = track_phone.strip()
             try:
@@ -1127,7 +1151,7 @@ else:
     # PAGE 4: SUPPORT CHAT
     elif st.session_state.cust_active_page == "💬 Chat with Us":
         st.subheader("💬 Support Chat")
-        c_phone_chat = st.text_input("Enter your Phone Number to start chatting", value=st.session_state.active_cust_phone, key="cust_chat_phone")
+        c_phone_chat = normalize_phone(st.text_input("Enter your Phone Number to start chatting", value=st.session_state.active_cust_phone, key="cust_chat_phone"))
         
         if c_phone_chat.strip():
             st.session_state.active_cust_phone = c_phone_chat.strip()
@@ -1161,7 +1185,7 @@ else:
     # PAGE 5: RECEIPT PORTFOLIO
     elif st.session_state.cust_active_page == "🧾 Receipt Portfolio":
         st.subheader("🧾 Receipt Portfolio & Active Status")
-        lookup_phone = st.text_input("Enter your Phone Number to load your Portfolio Receipt", value=st.session_state.active_cust_phone)
+        lookup_phone = normalize_phone(st.text_input("Enter your Phone Number to load your Portfolio Receipt", value=st.session_state.active_cust_phone))
         
         active_rec = None
         available_order_ids = []
@@ -1235,7 +1259,7 @@ else:
                 i_name = itm.get('name', 'Item')
                 i_qty = itm.get('qty', 1)
                 i_price = f"₦{itm.get('price', 0.0):,.2f}" if itm.get('price', 0.0) > 0 else "Pending"
-                i_total = f"₦{itm.get('total', 0.0):,.2f}" if itm.get('total', 0.0) > 0 else "Pending"
+                i_total = f"₦{itm.get('total', 0.0):,.2f}" if idx := itm.get('total', 0.0) > 0 else "Pending"
                 i_st = itm.get('item_status', 'Pending Audit')
                 
                 status_color = "#2e7d32" if "Available" in i_st and "Unavailable" not in i_st else ("#c62828" if "Unavailable" in i_st else "#f57c00")
@@ -1290,7 +1314,6 @@ else:
             </div>
             """
             
-            # Dynamic height calculation prevents internal iframe scrollbars
             calc_height = 420 + (len(sold_items_list) * 45) + (60 if delivery_notes else 0)
             components.html(full_receipt_html, height=calc_height, scrolling=True)
 
@@ -1306,4 +1329,4 @@ else:
         else:
             st.info("Enter your phone number above or submit a request to load your active order portfolio receipt.")
 
-st.sidebar.caption(f"{store_title} v10.6 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v10.7 | {date.today().year}")
