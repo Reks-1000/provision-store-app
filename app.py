@@ -45,17 +45,28 @@ try:
 except Exception:
     pass
 
+@st.cache_data(ttl=600)
+def fetch_cached_dataframe(table_name):
+    """Caches table reads for 10 minutes to minimize Supabase egress bandwidth."""
+    try:
+        response = supabase.table(table_name).select("*").execute()
+        if response.data:
+            return pd.DataFrame(response.data)
+        return pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
+
 def fetch_dataframe(table_name):
     try:
         response = supabase.table(table_name).select("*").execute()
         if response.data:
             return pd.DataFrame(response.data)
         return pd.DataFrame()
-    except Exception as e:
+    except Exception:
         return pd.DataFrame()
 
 # ==========================================
-# 2. CORE UTILITY FUNCTIONS (HD IMAGES, RECEIPTS & WHATSAPP)
+# 2. CORE UTILITY FUNCTIONS (MEDIA OPTIMIZATION & WHATSAPP)
 # ==========================================
 store_title = "Sammyreks Business Center"
 
@@ -82,11 +93,13 @@ def generate_whatsapp_link(phone, receipt_type, customer_name, items_list, grand
         return f"https://wa.me/?text={encoded_msg}"
 
 def get_image_base64(uploaded_file, max_size_mb=2):
+    """Automatically compresses, resizes, and validates uploaded images to prevent storage bloat."""
     if uploaded_file is not None:
         try:
-            if uploaded_file.size > max_size_mb * 1024 * 1024:
-                st.error(f"Image file exceeds {max_size_mb}MB limit. Please upload a smaller image.")
+            if hasattr(uploaded_file, "size") and uploaded_file.size > max_size_mb * 1024 * 1024:
+                st.error(f"⚠️ Image file is too large ({uploaded_file.size / (1024*1024):.1f}MB). Max allowed is {max_size_mb}MB.")
                 return None
+
             if isinstance(uploaded_file, Image.Image):
                 img = uploaded_file
             else:
@@ -95,10 +108,15 @@ def get_image_base64(uploaded_file, max_size_mb=2):
             if img.mode in ("RGBA", "P"):
                 img = img.convert("RGB")
                 
+            max_dimension = 800
+            if img.width > max_dimension or img.height > max_dimension:
+                img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+                
             buffered = BytesIO()
-            img.save(buffered, format="JPEG", quality=85, subsampling=0)
+            img.save(buffered, format="JPEG", quality=75, optimize=True)
             return base64.b64encode(buffered.getvalue()).decode()
-        except Exception:
+        except Exception as e:
+            st.error(f"Image processing error: {e}")
             return None
     return None
 
@@ -111,10 +129,11 @@ def display_image_base64(base64_str):
     return None
 
 def get_file_base64(uploaded_file, max_size_mb=10):
+    """Validates and restricts direct video uploads to prevent bandwidth exhaustion."""
     if uploaded_file is not None:
         try:
             if uploaded_file.size > max_size_mb * 1024 * 1024:
-                st.error(f"Video file exceeds {max_size_mb}MB limit.")
+                st.error(f"⚠️ Video file exceeds the strict {max_size_mb}MB safety limit. Please use a YouTube or cloud link instead!")
                 return None
             return base64.b64encode(uploaded_file.read()).decode()
         except Exception:
@@ -196,7 +215,6 @@ if not st.session_state.auth["logged_in"]:
                     st.error("Please enter both Username and Password.")
                 else:
                     try:
-                        # FOOLPROOF MASTER OVERRIDE FOR ADMIN LOGIN
                         if user_input.lower() == "admin" and pass_input == "Sammyreks2026!":
                             st.session_state.auth = {
                                 "logged_in": True, 
@@ -391,7 +409,6 @@ if view_mode == "STAFF":
             """
             components.html(html_code, height=360 + (len(sold_items_list) * 45), scrolling=True)
 
-            # Direct WhatsApp Share Button
             wa_url = generate_whatsapp_link(cust_phone_rc, rec_type, cust_name_rc, sold_items_list, g_total_rc)
             st.markdown(f"""
                 <a href="{wa_url}" target="_blank">
@@ -429,7 +446,7 @@ if view_mode == "STAFF":
                 "category": "General"
             }
         
-        st.write("📷 **Product Image Input (Compressed HD Quality, Max 2MB)**")
+        st.write("📷 **Product Image Input (Auto-Compressed HD, Max 2MB)**")
         img_tab1, img_tab2 = st.tabs(["📁 Upload Image File", "📋 Paste from Clipboard"])
         chosen_image = None
 
@@ -455,7 +472,7 @@ if view_mode == "STAFF":
                 st.info("Paste from clipboard component not available.")
 
         st.divider()
-        st.write("🎥 **Product Video Advert Input (Max 10MB)**")
+        st.write("🎥 **Product Video Advert Input (Max 10MB or YouTube Link)**")
         vid_file = st.file_uploader("Upload Direct MP4 Video File", type=["mp4", "mov", "webm"])
 
         with st.form("inventory_form"):
@@ -1079,11 +1096,7 @@ else:
                     st.session_state.cart = []
                     st.rerun()
 
-        try:
-            res_shop = supabase.table("products").select("*").execute()
-            df_shop = pd.DataFrame(res_shop.data) if res_shop.data else pd.DataFrame()
-        except Exception:
-            df_shop = pd.DataFrame()
+        df_shop = fetch_cached_dataframe("products")
 
         if not df_shop.empty:
             if 'category' not in df_shop.columns:
@@ -1352,7 +1365,6 @@ else:
                             """
                             components.html(receipt_box_html, height=280 + (len(ord_group) * 40), scrolling=True)
 
-                            # WhatsApp Share for Customer Ledger
                             cust_wa_url = generate_whatsapp_link(history_phone.strip(), f"Transaction Receipt ({batch_ts})", b_cust, history_items_list, b_total)
                             st.markdown(f"""
                                 <a href="{cust_wa_url}" target="_blank">
@@ -1376,4 +1388,4 @@ else:
         else:
             st.info("Enter your phone number above to inspect all your past independent receipts and active transaction histories.")
 
-st.sidebar.caption(f"{store_title} v13.0 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v14.0 | {date.today().year}")
