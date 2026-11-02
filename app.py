@@ -8,6 +8,7 @@ from io import BytesIO
 from PIL import Image
 import math
 import hashlib
+import urllib.parse
 
 # ==========================================
 # 1. DATABASE SYSTEM & INITIALIZATION (SUPABASE)
@@ -54,8 +55,32 @@ def fetch_dataframe(table_name):
         return pd.DataFrame()
 
 # ==========================================
-# 2. CORE UTILITY FUNCTIONS (HD IMAGES & RECEIPTS)
+# 2. CORE UTILITY FUNCTIONS (HD IMAGES, RECEIPTS & WHATSAPP)
 # ==========================================
+store_title = "Sammyreks Business Center"
+
+def generate_whatsapp_link(phone, receipt_type, customer_name, items_list, grand_total):
+    """Generates a pre-filled click-to-chat WhatsApp URL for receipts."""
+    clean_phone = "".join(c for c in phone if c.isdigit())
+    
+    items_text = "\n".join([f"- {i.get('name', 'Item')} ({i.get('unit', 'Unit')}) x{i.get('qty', 1)} @ ₦{i.get('price', 0):,.2f} = ₦{i.get('total', 0):,.2f}" for i in items_list])
+    
+    message = (
+        f"🏢 *{store_title}*\n"
+        f"*{receipt_type}*\n\n"
+        f"👤 *Customer:* {customer_name}\n"
+        f"📞 *Phone:* {phone}\n\n"
+        f"🛒 *Items:* \n{items_text}\n\n"
+        f"💰 *Grand Total: ₦{grand_total:,.2f}*\n\n"
+        f"Thank you for your patronage!"
+    )
+    
+    encoded_msg = urllib.parse.quote(message)
+    if clean_phone:
+        return f"https://wa.me/{clean_phone}?text={encoded_msg}"
+    else:
+        return f"https://wa.me/?text={encoded_msg}"
+
 def get_image_base64(uploaded_file, max_size_mb=2):
     if uploaded_file is not None:
         try:
@@ -155,8 +180,6 @@ if 'active_cust_phone' not in st.session_state:
 
 if 'active_cust_name' not in st.session_state:
     st.session_state.active_cust_name = ""
-
-store_title = "Sammyreks Business Center"
 
 st.sidebar.title("🏢 Sammyreks Portal")
 st.sidebar.markdown("---")
@@ -341,6 +364,9 @@ if view_mode == "STAFF":
             rec = st.session_state.last_receipt
             rec_type = rec.get('type', 'Official Receipt')
             sold_items_list = rec.get('sold_items', rec.get('items', []))
+            cust_name_rc = rec.get('customer', 'Walk-in Customer')
+            cust_phone_rc = rec.get('phone', 'N/A')
+            g_total_rc = rec.get('grand_total', 0.0)
 
             rows_html = "".join([
                 f"<tr style='border-bottom:1px solid #e0e0e0;'><td style='padding:10px;'>{itm.get('name','Item')} ({itm.get('unit','Unit')})</td><td style='padding:10px;text-align:center;'>{itm.get('qty',1)}</td><td style='padding:10px;text-align:right;'>₦{itm.get('price',0.0):,.2f}</td><td style='padding:10px;text-align:right;font-weight:bold;'>₦{itm.get('total',0.0):,.2f}</td></tr>"
@@ -351,8 +377,8 @@ if view_mode == "STAFF":
             <div style="background:#ffffff;color:#111;padding:24px;border-radius:12px;border:2.5px solid #1565c0;font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:620px;margin:auto;">
                 <div style="text-align:center;"><h2 style="margin:0;color:#1565c0;">🏢 {store_title}</h2><p style="margin:4px 0;color:#555;font-weight:600;">{rec_type}</p></div>
                 <hr style="border:none;border-top:1px solid #ddd;margin:15px 0;">
-                <p style="margin:4px 0;"><b>Customer Name:</b> {rec.get('customer','Walk-in Customer')}</p>
-                <p style="margin:4px 0;"><b>Phone Number:</b> {rec.get('phone','N/A')}</p>
+                <p style="margin:4px 0;"><b>Customer Name:</b> {cust_name_rc}</p>
+                <p style="margin:4px 0;"><b>Phone Number:</b> {cust_phone_rc}</p>
                 <p style="margin:4px 0;"><b>Date/Time:</b> {rec.get('date','')} | <b>Staff:</b> {rec.get('cashier','Staff')}</p>
                 <hr style="border:none;border-top:1px solid #ddd;margin:15px 0;">
                 <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
@@ -360,10 +386,20 @@ if view_mode == "STAFF":
                     <tbody>{rows_html}</tbody>
                 </table>
                 <hr style="border:none;border-top:1px solid #ddd;margin:15px 0;">
-                <h3 style="text-align:right;color:#1565c0;margin:10px 0;">Grand Total: ₦{rec.get('grand_total',0.0):,.2f}</h3>
+                <h3 style="text-align:right;color:#1565c0;margin:10px 0;">Grand Total: ₦{g_total_rc:,.2f}</h3>
             </div>
             """
             components.html(html_code, height=360 + (len(sold_items_list) * 45), scrolling=True)
+
+            # Direct WhatsApp Share Button
+            wa_url = generate_whatsapp_link(cust_phone_rc, rec_type, cust_name_rc, sold_items_list, g_total_rc)
+            st.markdown(f"""
+                <a href="{wa_url}" target="_blank">
+                    <button style="width:100%; background-color:#25d366; color:white; padding:12px; border:none; border-radius:8px; font-size:1.1rem; font-weight:bold; cursor:pointer; margin-top:10px;">
+                        💬 Send Receipt via WhatsApp
+                    </button>
+                </a>
+            """, unsafe_allow_html=True)
 
             if st.button("❌ Close Receipt View"):
                 st.session_state.last_receipt = None
@@ -1269,6 +1305,7 @@ else:
                             st.markdown(f"**Transaction Timestamp:** {batch_ts}")
                             
                             rows_html = ""
+                            history_items_list = []
                             for item in ord_group:
                                 i_name = str(item['item']).replace("SPECIAL:", "").strip()
                                 i_qty = item['qty']
@@ -1276,6 +1313,7 @@ else:
                                 i_price = i_tot / i_qty if i_qty > 0 else 0.0
                                 i_status = item['status']
                                 
+                                history_items_list.append({"name": i_name, "unit": "Item", "qty": i_qty, "price": i_price, "total": i_tot})
                                 status_color = "#2e7d32" if "Delivered" in i_status or "Available" in i_status else "#f57c00"
                                 
                                 rows_html += f"""
@@ -1314,6 +1352,16 @@ else:
                             """
                             components.html(receipt_box_html, height=280 + (len(ord_group) * 40), scrolling=True)
 
+                            # WhatsApp Share for Customer Ledger
+                            cust_wa_url = generate_whatsapp_link(history_phone.strip(), f"Transaction Receipt ({batch_ts})", b_cust, history_items_list, b_total)
+                            st.markdown(f"""
+                                <a href="{cust_wa_url}" target="_blank">
+                                    <button style="width:100%; background-color:#25d366; color:white; padding:10px; border:none; border-radius:8px; font-size:1rem; font-weight:bold; cursor:pointer; margin-top:8px;">
+                                        💬 Share Receipt via WhatsApp
+                                    </button>
+                                </a>
+                            """, unsafe_allow_html=True)
+
                             available_ids = [int(o['id']) for o in ord_group if "Available" in o['status'] and "Unavailable" not in o['status']]
                             if available_ids:
                                 if st.button(f"🚀 Confirm & Place Final Order for Available Items (Batch {batch_ts})", key=f"conf_batch_{batch_ts}", use_container_width=True):
@@ -1328,4 +1376,4 @@ else:
         else:
             st.info("Enter your phone number above to inspect all your past independent receipts and active transaction histories.")
 
-st.sidebar.caption(f"{store_title} v12.0 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v13.0 | {date.today().year}")
