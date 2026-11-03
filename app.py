@@ -59,21 +59,26 @@ try:
 except Exception:
     pass
 
-def fetch_dataframe(table_name, retries=3, delay=1):
-    """Fetches table data from Supabase with automatic retry logic to prevent 57014 timeouts."""
-    for attempt in range(retries):
-        try:
-            response = supabase.table(table_name).select("*").execute()
-            if response.data and len(response.data) > 0:
-                return pd.DataFrame(response.data)
-            return pd.DataFrame()
-        except Exception as err:
-            if attempt < retries - 1:
-                time.sleep(delay)
-            else:
-                st.warning(f"Database connection notice for '{table_name}': Timed out or reconnecting...")
-                return pd.DataFrame()
-    return pd.DataFrame()
+@st.cache_data(ttl=30)
+def fetch_dataframe_cached(table_name):
+    """Cached data fetcher to eliminate redundant network queries and speed up the app."""
+    try:
+        response = supabase.table(table_name).select("*").execute()
+        if response.data and len(response.data) > 0:
+            return pd.DataFrame(response.data)
+        return pd.DataFrame()
+    except Exception as err:
+        return pd.DataFrame()
+
+def fetch_dataframe(table_name):
+    """Standard live fetcher for transactional tables."""
+    try:
+        response = supabase.table(table_name).select("*").execute()
+        if response.data and len(response.data) > 0:
+            return pd.DataFrame(response.data)
+        return pd.DataFrame()
+    except Exception as err:
+        return pd.DataFrame()
 
 # ==========================================
 # 2. CLOUDINARY & CORE UTILITY FUNCTIONS
@@ -288,7 +293,7 @@ if view_mode == "STAFF":
     # TAB 1: POS & SALES
     with tabs[1]:
         st.header("💳 POS & Sales Counter")
-        df_p_pos = fetch_dataframe("products")
+        df_p_pos = fetch_dataframe_cached("products")
             
         if not df_p_pos.empty:
             col_pos1, col_pos2 = st.columns([2, 1])
@@ -424,7 +429,7 @@ if view_mode == "STAFF":
     # TAB 2: INVENTORY CONTROL
     with tabs[2]:
         st.header("📦 Stock & Warehouse Control (Cloudinary Powered)")
-        df_inv = fetch_dataframe("products")
+        df_inv = fetch_dataframe_cached("products")
         
         if not df_inv.empty:
             st.dataframe(df_inv.drop(columns=['img_data'], errors='ignore'), use_container_width=True, hide_index=True)
@@ -573,6 +578,7 @@ if view_mode == "STAFF":
                         else:
                             supabase.table("products").insert(prod_payload).execute()
                             st.success(f"Added '{safe_name}' to inventory!")
+                        st.cache_data.clear()
                         st.rerun()
                     except Exception as save_error:
                         if "duplicate key value" in str(save_error) or "23505" in str(save_error):
@@ -588,6 +594,7 @@ if view_mode == "STAFF":
                 st.error(f"Warning: Deleting '{delete_target}' cannot be undone!")
                 if st.button(f"Confirm Delete: {delete_target}"):
                     supabase.table("products").delete().eq("name", delete_target).execute()
+                    st.cache_data.clear()
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
 
@@ -903,7 +910,7 @@ else:
                             st.success("✅ Order submitted successfully!")
                             st.rerun()
 
-        df_shop = fetch_dataframe("products")
+        df_shop = fetch_dataframe_cached("products")
 
         if not df_shop.empty:
             if 'category' not in df_shop.columns:
