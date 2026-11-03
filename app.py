@@ -486,7 +486,6 @@ if view_mode == "STAFF":
         st.write("🎥 **Product Video File Upload (Hosted on Cloudinary)**")
         vid_file = st.file_uploader("Upload Direct MP4 Video File", type=["mp4", "mov", "webm"], key=f"vid_uploader_{target_id}")
 
-        # DYNAMIC FORM KEYS TIED TO target_id TO PREVENT CACHING CONFLICTS
         form_key_suffix = f"_{target_id}"
 
         with st.form(f"inventory_form{form_key_suffix}"):
@@ -553,7 +552,6 @@ if view_mode == "STAFF":
                     safe_name = str(n_name).encode('utf-8', 'ignore').decode('utf-8').strip()
                     safe_desc = str(n_desc).encode('utf-8', 'ignore').decode('utf-8').strip() if n_desc else ""
 
-                    # Upload to Cloudinary if new files are provided
                     img_url = upload_image_to_cloudinary(chosen_image) if chosen_image is not None else curr_data.get('img_data')
                     vid_uploaded_url = upload_video_to_cloudinary(vid_file) if vid_file is not None else None
                     
