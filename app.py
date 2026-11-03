@@ -9,6 +9,7 @@ from PIL import Image
 import math
 import hashlib
 import urllib.parse
+import time
 import cloudinary
 import cloudinary.uploader
 
@@ -58,16 +59,21 @@ try:
 except Exception:
     pass
 
-def fetch_dataframe(table_name):
-    """Safely fetches table data from Supabase with timeout and error handling."""
-    try:
-        response = supabase.table(table_name).select("*").execute()
-        if response.data and len(response.data) > 0:
-            return pd.DataFrame(response.data)
-        return pd.DataFrame()
-    except Exception as err:
-        st.warning(f"Database sync notice (Timeout/Network): {err}. Please refresh or try again.")
-        return pd.DataFrame()
+def fetch_dataframe(table_name, retries=3, delay=1):
+    """Fetches table data from Supabase with automatic retry logic to prevent 57014 timeouts."""
+    for attempt in range(retries):
+        try:
+            response = supabase.table(table_name).select("*").execute()
+            if response.data and len(response.data) > 0:
+                return pd.DataFrame(response.data)
+            return pd.DataFrame()
+        except Exception as err:
+            if attempt < retries - 1:
+                time.sleep(delay)
+            else:
+                st.warning(f"Database connection notice for '{table_name}': Timed out or reconnecting...")
+                return pd.DataFrame()
+    return pd.DataFrame()
 
 # ==========================================
 # 2. CLOUDINARY & CORE UTILITY FUNCTIONS
