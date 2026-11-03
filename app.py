@@ -59,9 +59,9 @@ try:
 except Exception:
     pass
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=15)
 def fetch_dataframe_cached(table_name):
-    """Cached data fetcher to eliminate redundant network queries and speed up the app."""
+    """Cached data fetcher to speed up product browsing and inventory."""
     try:
         response = supabase.table(table_name).select("*").execute()
         if response.data and len(response.data) > 0:
@@ -71,7 +71,7 @@ def fetch_dataframe_cached(table_name):
         return pd.DataFrame()
 
 def fetch_dataframe(table_name):
-    """Standard live fetcher for transactional tables."""
+    """Standard live fetcher for real-time tables."""
     try:
         response = supabase.table(table_name).select("*").execute()
         if response.data and len(response.data) > 0:
@@ -341,6 +341,7 @@ if view_mode == "STAFF":
                         
                         new_qty = float(p['qty_cartons'] - cartons_deducted)
                         supabase.table("products").update({"qty_cartons": new_qty}).eq("id", int(p['id'])).execute()
+                        st.cache_data.clear()
                             
                         st.session_state.last_receipt = {
                             "type": "Successful Delivery Receipt", 
@@ -377,6 +378,7 @@ if view_mode == "STAFF":
                                 
                             new_qty = float(p['qty_cartons'] - cartons_deducted)
                             supabase.table("products").update({"qty_cartons": new_qty}).eq("id", int(p['id'])).execute()
+                            st.cache_data.clear()
                                 
                             st.warning(f"Debt logged for {c_name_pos}!")
                             st.rerun()
