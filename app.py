@@ -45,24 +45,15 @@ try:
 except Exception:
     pass
 
-@st.cache_data(ttl=600)
-def fetch_cached_dataframe(table_name):
-    """Caches table reads for 10 minutes to minimize Supabase egress bandwidth."""
-    try:
-        response = supabase.table(table_name).select("*").execute()
-        if response.data:
-            return pd.DataFrame(response.data)
-        return pd.DataFrame()
-    except Exception:
-        return pd.DataFrame()
-
 def fetch_dataframe(table_name):
+    """Directly fetches table data from Supabase without persistent empty caching blocks."""
     try:
         response = supabase.table(table_name).select("*").execute()
-        if response.data:
+        if response.data and len(response.data) > 0:
             return pd.DataFrame(response.data)
         return pd.DataFrame()
-    except Exception:
+    except Exception as err:
+        st.warning(f"Database sync notice: {err}")
         return pd.DataFrame()
 
 # ==========================================
@@ -285,11 +276,7 @@ if view_mode == "STAFF":
     # TAB 1: POS & SALES
     with tabs[1]:
         st.header("💳 POS & Sales Counter")
-        try:
-            res_pos = supabase.table("products").select("*").execute()
-            df_p_pos = pd.DataFrame(res_pos.data) if res_pos.data else pd.DataFrame()
-        except Exception:
-            df_p_pos = pd.DataFrame()
+        df_p_pos = fetch_dataframe("products")
             
         if not df_p_pos.empty:
             col_pos1, col_pos2 = st.columns([2, 1])
@@ -1096,7 +1083,8 @@ else:
                     st.session_state.cart = []
                     st.rerun()
 
-        df_shop = fetch_cached_dataframe("products")
+        # DIRECT NON-CACHED SHOP FETCH TO REFLECT SUPABASE DATA INSTANTLY
+        df_shop = fetch_dataframe("products")
 
         if not df_shop.empty:
             if 'category' not in df_shop.columns:
@@ -1131,7 +1119,6 @@ else:
                             st.caption(f"📂 Category: **{s_row.get('category', 'General')}** | 📍 Shelf: {s_row.get('shelf', 'N/A')}")
                             st.write(s_row.get('description', ''))
                             
-                            # CORRECTED VIDEO LINK / BLOB HANDLING BLOCK
                             vid_link = str(s_row.get('video_url', '')).strip()
                             has_direct_vid = s_row.get('video_data') and str(s_row['video_data']).strip() not in ["None", "", "nan"]
                             has_url_vid = vid_link and vid_link.lower() not in ["none", "", "nan"]
@@ -1392,4 +1379,4 @@ else:
         else:
             st.info("Enter your phone number above to inspect all your past independent receipts and active transaction histories.")
 
-st.sidebar.caption(f"{store_title} v14.1 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v14.2 | {date.today().year}")
