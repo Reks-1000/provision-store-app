@@ -9,9 +9,11 @@ from PIL import Image
 import math
 import hashlib
 import urllib.parse
+import cloudinary
+import cloudinary.uploader
 
 # ==========================================
-# 1. DATABASE SYSTEM & INITIALIZATION (SUPABASE)
+# 1. DATABASE & STORAGE INITIALIZATION
 # ==========================================
 @st.cache_resource
 def init_connection():
@@ -24,6 +26,17 @@ try:
 except Exception as e:
     st.error(f"Database connection failed. Please verify Streamlit Cloud Secrets! Error: {e}")
     st.stop()
+
+# Initialize Cloudinary Configuration
+try:
+    cloudinary.config(
+        cloud_name=st.secrets["CLOUDINARY_CLOUD_NAME"],
+        api_key=st.secrets["CLOUDINARY_API_KEY"],
+        api_secret=st.secrets["CLOUDINARY_API_SECRET"],
+        secure=True
+    )
+except Exception as e:
+    st.error(f"Cloudinary configuration missing from secrets! Error: {e}")
 
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
@@ -57,14 +70,55 @@ def fetch_dataframe(table_name):
         return pd.DataFrame()
 
 # ==========================================
-# 2. CORE UTILITY FUNCTIONS (MEDIA OPTIMIZATION & WHATSAPP)
+# 2. CLOUDINARY & CORE UTILITY FUNCTIONS
 # ==========================================
 store_title = "Sammyreks Business Center"
 
+def upload_image_to_cloudinary(uploaded_file, folder="sammyreks_products"):
+    """Uploads and optimizes images on Cloudinary, returning a secure URL."""
+    if uploaded_file is not None:
+        try:
+            if isinstance(uploaded_file, Image.Image):
+                buffered = BytesIO()
+                uploaded_file.save(buffered, format="JPEG", quality=80)
+                file_bytes = buffered.getvalue()
+            else:
+                file_bytes = uploaded_file.read()
+
+            upload_result = cloudinary.uploader.upload(
+                file_bytes,
+                folder=folder,
+                resource_type="image",
+                transformation=[
+                    {"width": 800, "height": 800, "crop": "limit"},
+                    {"quality": "auto", "fetch_format": "auto"}
+                ]
+            )
+            return upload_result.get("secure_url")
+        except Exception as e:
+            st.error(f"Cloudinary image upload error: {e}")
+            return None
+    return None
+
+def upload_video_to_cloudinary(uploaded_file, folder="sammyreks_videos"):
+    """Uploads video files directly to Cloudinary, returning a secure streaming URL."""
+    if uploaded_file is not None:
+        try:
+            file_bytes = uploaded_file.read()
+            upload_result = cloudinary.uploader.upload(
+                file_bytes,
+                folder=folder,
+                resource_type="video",
+                chunk_size=6000000
+            )
+            return upload_result.get("secure_url")
+        except Exception as e:
+            st.error(f"Cloudinary video upload error: {e}")
+            return None
+    return None
+
 def generate_whatsapp_link(phone, receipt_type, customer_name, items_list, grand_total):
-    """Generates a pre-filled click-to-chat WhatsApp URL for receipts."""
     clean_phone = "".join(c for c in phone if c.isdigit())
-    
     items_text = "\n".join([f"- {i.get('name', 'Item')} ({i.get('unit', 'Unit')}) x{i.get('qty', 1)} @ ₦{i.get('price', 0):,.2f} = ₦{i.get('total', 0):,.2f}" for i in items_list])
     
     message = (
@@ -82,54 +136,6 @@ def generate_whatsapp_link(phone, receipt_type, customer_name, items_list, grand
         return f"https://wa.me/{clean_phone}?text={encoded_msg}"
     else:
         return f"https://wa.me/?text={encoded_msg}"
-
-def get_image_base64(uploaded_file, max_size_mb=2):
-    """Automatically compresses, resizes, and validates uploaded images to prevent storage bloat."""
-    if uploaded_file is not None:
-        try:
-            if hasattr(uploaded_file, "size") and uploaded_file.size > max_size_mb * 1024 * 1024:
-                st.error(f"⚠️ Image file is too large ({uploaded_file.size / (1024*1024):.1f}MB). Max allowed is {max_size_mb}MB.")
-                return None
-
-            if isinstance(uploaded_file, Image.Image):
-                img = uploaded_file
-            else:
-                img = Image.open(uploaded_file)
-                
-            if img.mode in ("RGBA", "P"):
-                img = img.convert("RGB")
-                
-            max_dimension = 800
-            if img.width > max_dimension or img.height > max_dimension:
-                img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
-                
-            buffered = BytesIO()
-            img.save(buffered, format="JPEG", quality=75, optimize=True)
-            return base64.b64encode(buffered.getvalue()).decode()
-        except Exception as e:
-            st.error(f"Image processing error: {e}")
-            return None
-    return None
-
-def display_image_base64(base64_str):
-    if base64_str:
-        try:
-            return base64.b64decode(base64_str)
-        except Exception:
-            return None
-    return None
-
-def get_file_base64(uploaded_file, max_size_mb=10):
-    """Validates and restricts direct video uploads to prevent bandwidth exhaustion."""
-    if uploaded_file is not None:
-        try:
-            if uploaded_file.size > max_size_mb * 1024 * 1024:
-                st.error(f"⚠️ Video file exceeds the strict {max_size_mb}MB safety limit. Please use a YouTube or cloud link instead!")
-                return None
-            return base64.b64encode(uploaded_file.read()).decode()
-        except Exception:
-            return None
-    return None
 
 def get_now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -411,11 +417,11 @@ if view_mode == "STAFF":
 
     # TAB 2: INVENTORY CONTROL
     with tabs[2]:
-        st.header("📦 Stock & Warehouse Control")
+        st.header("📦 Stock & Warehouse Control (Cloudinary Powered)")
         df_inv = fetch_dataframe("products")
         
         if not df_inv.empty:
-            st.dataframe(df_inv.drop(columns=['img_data', 'video_data'], errors='ignore'), use_container_width=True, hide_index=True)
+            st.dataframe(df_inv.drop(columns=['img_data'], errors='ignore'), use_container_width=True, hide_index=True)
         st.divider()
         
         st.subheader("📝 Add / Update Item")
@@ -428,12 +434,12 @@ if view_mode == "STAFF":
             curr_data = {
                 "name": "", "cost": 0.0, "price_carton": 0.0, "price_pack": 0.0, "price_retail": 0.0,
                 "qty_cartons": 0, "packs_per_carton": 1, "units_per_pack": 1, "shelf": "",
-                "expiry": str(date.today()), "description": "", "img_data": None, "video_url": "", "video_data": None,
+                "expiry": str(date.today()), "description": "", "img_data": "", "video_url": "",
                 "unit_main_label": "Carton", "unit_pack_label": "Pack", "unit_retail_label": "Retail Unit",
                 "category": "General"
             }
         
-        st.write("📷 **Product Image Input (Auto-Compressed HD, Max 2MB)**")
+        st.write("📷 **Product Image Input (Uploaded instantly to Cloudinary)**")
         img_tab1, img_tab2 = st.tabs(["📁 Upload Image File", "📋 Paste from Clipboard"])
         chosen_image = None
 
@@ -459,23 +465,23 @@ if view_mode == "STAFF":
                 st.info("Paste from clipboard component not available.")
 
         st.divider()
-        st.write("🎥 **Product Video Advert Input (Max 10MB or YouTube Link)**")
+        st.write("🎥 **Product Video File Upload (Hosted on Cloudinary)**")
         vid_file = st.file_uploader("Upload Direct MP4 Video File", type=["mp4", "mov", "webm"])
 
         with st.form("inventory_form"):
             st.info("✏️ **Category & Box Headings**: Type any category name of your choice below.")
             
             default_cat = str(curr_data.get('category', 'General') or 'General')
-            sel_category = st.text_input("Product Category (Type any category e.g. Cosmetics, Drinks, Books, etc.)", value=default_cat).strip().title()
+            sel_category = st.text_input("Product Category", value=default_cat).strip().title()
 
             st.divider()
             ul1, ul2, ul3 = st.columns(3)
             with ul1:
-                custom_main_label = st.text_input("Main Unit Name (e.g. Carton, Box)", value=str(curr_data.get('unit_main_label', 'Carton') or 'Carton'))
+                custom_main_label = st.text_input("Main Unit Name (e.g. Carton)", value=str(curr_data.get('unit_main_label', 'Carton') or 'Carton'))
             with ul2:
-                custom_pack_label = st.text_input("Sub-Unit Name (e.g. Pack, Bundle)", value=str(curr_data.get('unit_pack_label', 'Pack') or 'Pack'))
+                custom_pack_label = st.text_input("Sub-Unit Name (e.g. Pack)", value=str(curr_data.get('unit_pack_label', 'Pack') or 'Pack'))
             with ul3:
-                custom_retail_label = st.text_input("Retail Name (e.g. Piece, Bottle)", value=str(curr_data.get('unit_retail_label', 'Retail Unit') or 'Retail Unit'))
+                custom_retail_label = st.text_input("Retail Name (e.g. Piece)", value=str(curr_data.get('unit_retail_label', 'Retail Unit') or 'Retail Unit'))
 
             st.divider()
 
@@ -499,7 +505,7 @@ if view_mode == "STAFF":
                 default_exp = date.today()
 
             n_exp = st.date_input("Expiry Date", value=default_exp)
-            n_video_url = st.text_input("OR Video Web Link (YouTube / Vimeo / Cloud Link)", value=str(curr_data.get('video_url', '') or ''))
+            n_video_url = st.text_input("OR YouTube / Cloud Video Link", value=str(curr_data.get('video_url', '') or ''))
             n_desc = st.text_area("Product Description", value=str(curr_data.get('description', '')))
             
             if st.form_submit_button("💾 Save Product Data"):
@@ -525,9 +531,12 @@ if view_mode == "STAFF":
                     safe_name = str(n_name).encode('utf-8', 'ignore').decode('utf-8').strip()
                     safe_desc = str(n_desc).encode('utf-8', 'ignore').decode('utf-8').strip() if n_desc else ""
 
-                    img_encoded = get_image_base64(chosen_image) if chosen_image else curr_data.get('img_data')
-                    video_encoded = get_file_base64(vid_file) if vid_file else curr_data.get('video_data')
+                    # Upload to Cloudinary if new files are provided
+                    img_url = upload_image_to_cloudinary(chosen_image) if chosen_image else curr_data.get('img_data')
+                    vid_uploaded_url = upload_video_to_cloudinary(vid_file) if vid_file else None
                     
+                    final_video_link = vid_uploaded_url if vid_uploaded_url else (n_video_url.strip() if n_video_url else curr_data.get('video_url', ''))
+
                     raw_payload = {
                         "name": safe_name,
                         "cost": safe_float(n_cost),
@@ -539,9 +548,8 @@ if view_mode == "STAFF":
                         "units_per_pack": max(1, safe_int(n_upp)),
                         "shelf": str(n_shelf).strip() if n_shelf else "",
                         "expiry": str(n_exp),
-                        "img_data": img_encoded,
-                        "video_data": video_encoded,
-                        "video_url": str(n_video_url).strip() if n_video_url else "",
+                        "img_data": img_url,
+                        "video_url": final_video_link,
                         "description": safe_desc,
                         "category": sel_category,
                         "unit_main_label": custom_main_label.strip() or "Carton",
@@ -577,7 +585,7 @@ if view_mode == "STAFF":
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
 
-    # TAB 3: ORDERS & SPECIAL REQUESTS AUDIT (WITH ITEM-BY-ITEM STATUS CONTROL)
+    # TAB 3: ORDERS & SPECIAL REQUESTS AUDIT
     with tabs[3]:
         st.header("📋 Consolidated Customer Orders & Multi-Item Custom Requests")
         df_order_list = fetch_dataframe("orders")
@@ -633,14 +641,12 @@ if view_mode == "STAFF":
                                 "total_price": payload['item_total'],
                                 "status": payload['status']
                             }).eq("id", payload['id']).execute()
-                        st.success(f"Individual prices & availability quotes updated for customer receipt portfolio!")
+                        st.success(f"Individual prices & availability quotes updated!")
                         st.rerun()
-            else:
-                st.caption("No pending special requests found requiring itemized price audit.")
 
         st.divider()
-
-        st.subheader("📦 Bulk Order Batch Status Control & Itemized Status Control")
+        st.subheader("📦 Bulk Order Batch Status Control")
+        df_order_list = fetch_dataframe("orders")
         if not df_order_list.empty:
             grouped_orders = []
             batch_mapping = {}
@@ -654,112 +660,16 @@ if view_mode == "STAFF":
                 
                 label = f"Batch [{order_ids_str}] — {cust} ({phone}) | Total: ₦{total_sum:,.2f}"
                 batch_mapping[label] = {
-                    "ids": order_ids_list,
-                    "customer": cust,
-                    "phone": phone,
-                    "timestamp": ts,
-                    "date": date_val,
-                    "group": group
+                    "ids": order_ids_list, "customer": cust, "phone": phone, "timestamp": ts, "date": date_val, "group": group
                 }
                 
                 grouped_orders.append({
-                    "Order ID(s)": order_ids_str,
-                    "Customer Name": cust,
-                    "Phone Number": phone,
-                    "Ordered Items": combined_items,
-                    "Total Amount (₦)": total_sum,
-                    "Status": primary_status,
-                    "Date": date_val,
-                    "Timestamp": ts
+                    "Order ID(s)": order_ids_str, "Customer Name": cust, "Phone Number": phone,
+                    "Ordered Items": combined_items, "Total Amount (₦)": total_sum, "Status": primary_status, "Date": date_val, "Timestamp": ts
                 })
                 
             df_grouped = pd.DataFrame(grouped_orders)
             st.dataframe(df_grouped.sort_values('Timestamp', ascending=False), use_container_width=True, hide_index=True)
-            
-            st.divider()
-
-            with st.expander("⚡ Item-by-Item Batch Status Control & Consolidated Receipt", expanded=True):
-                selected_batch_label = st.selectbox("Select Customer Order Batch to Manage Item Statuses", list(batch_mapping.keys()))
-                chosen_batch = batch_mapping[selected_batch_label]
-                
-                st.write(f"### Managing Batch Orders: `#{', '.join(map(str, chosen_batch['ids']))}` for **{chosen_batch['customer']}**")
-                st.caption("Set a specific status for each item individually below:")
-
-                with st.form("itemized_batch_status_form"):
-                    item_status_payloads = []
-                    batch_total_calc = 0.0
-
-                    for _, row in chosen_batch['group'].iterrows():
-                        st.markdown("---")
-                        row_id = int(row['id'])
-                        row_item_name = str(row['item'])
-                        row_qty = row['qty']
-                        row_tot = row['total_price']
-                        current_row_status = str(row['status'])
-
-                        st.markdown(f"#### Order ID `#{row_id}`: **{row_item_name}** (Qty: `{row_qty}` | Total: ₦{row_tot:,.2f})")
-                        
-                        col_st1, col_st2 = st.columns([2, 1])
-                        with col_st1:
-                            preset_choice = st.selectbox(
-                                f"Select Status for #{row_id}", 
-                                ["Delivered", "Available", "Yet to be available", "Out of Stock", "Restocking Soon", "In Progress", "Ready", "Cancelled", "Custom..."],
-                                key=f"preset_st_{row_id}"
-                            )
-                        with col_st2:
-                            if preset_choice == "Custom...":
-                                final_status_val = st.text_input(f"Type Custom Status #{row_id}", value=current_row_status, key=f"custom_st_{row_id}")
-                            else:
-                                final_status_val = preset_choice
-
-                        item_status_payloads.append({
-                            "id": row_id,
-                            "status": final_status_val
-                        })
-                        batch_total_calc += row_tot
-
-                    st.markdown("---")
-                    col_sub1, col_sub2 = st.columns(2)
-                    with col_sub1:
-                        apply_itemized_btn = st.form_submit_button("💾 Save Item-by-Item Statuses", use_container_width=True)
-                    with col_sub2:
-                        generate_receipt_btn = st.form_submit_button("🧾 Save Statuses & Generate Consolidated Receipt", use_container_width=True)
-
-                    if apply_itemized_btn or generate_receipt_btn:
-                        for p_item in item_status_payloads:
-                            supabase.table("orders").update({"status": p_item['status']}).eq("id", p_item['id']).execute()
-                        
-                        if generate_receipt_btn:
-                            receipt_items_final = []
-                            for _, row_item in chosen_batch['group'].iterrows():
-                                r_id = int(row_item['id'])
-                                matching_status = next((p['status'] for p in item_status_payloads if p['id'] == r_id), "Pending")
-                                r_qty = row_item.get('qty', 1)
-                                r_tot = row_item.get('total_price', 0.0)
-                                receipt_items_final.append({
-                                    "name": str(row_item.get('item', '')).replace("SPECIAL:", "").strip(),
-                                    "unit": "Item",
-                                    "qty": r_qty,
-                                    "price": r_tot / r_qty if r_qty > 0 else 0.0,
-                                    "total": r_tot,
-                                    "item_status": matching_status
-                                })
-
-                            st.session_state.last_receipt = {
-                                "type": f"Consolidated Batch Receipt (Orders #{', '.join(map(str, chosen_batch['ids']))})",
-                                "customer": chosen_batch['customer'],
-                                "phone": chosen_batch['phone'],
-                                "date": chosen_batch['timestamp'],
-                                "sold_items": receipt_items_final,
-                                "grand_total": batch_total_calc,
-                                "status": "Updated"
-                            }
-                            st.success("Item statuses saved & consolidated batch receipt generated successfully!")
-                        else:
-                            st.success("Item statuses updated successfully for all selected orders!")
-                        st.rerun()
-        else:
-            st.info("No customer orders found yet.")
 
     # TAB 4: CUSTOMER CHATS
     with tabs[4]:
@@ -821,7 +731,7 @@ if view_mode == "STAFF":
                         st.success("Balance updated!")
                         st.rerun()
             else:
-                if st.button(f"🗑️ Confirm: Clear all debt for {debt_to_edit['customer']}"):
+                if st.button(f"🗑️ Confirm: Clear debt for {debt_to_edit['customer']}"):
                     supabase.table("debtors").delete().eq("id", int(selected_id)).execute()
                     st.success("Debt cleared!")
                     st.rerun()
@@ -841,16 +751,11 @@ if view_mode == "STAFF":
                     supabase.table("debtors").insert(debt_payload).execute()
                     st.success("New debt logged to cloud.")
                     st.rerun()
-                else:
-                    st.error("Name and Amount are required.")
 
     # TAB 6: SETTINGS
     with tabs[6]:
         st.header("⚙️ User Settings & Announcements")
-        
-        st.subheader("📌 Notice Board / Announcement Ticker")
-        st.caption("Type a notice (e.g. Sunday greetings, Christmas wishes, brand updates) to display on the customer app.")
-        
+        st.subheader("📌 Notice Board Ticker")
         try:
             curr_notice_res = supabase.table("app_settings").select("value").eq("key", "active_notice").execute()
             existing_notice = curr_notice_res.data[0]['value'] if (curr_notice_res.data and len(curr_notice_res.data) > 0) else ""
@@ -858,58 +763,15 @@ if view_mode == "STAFF":
             existing_notice = ""
 
         with st.form("notice_form"):
-            notice_input = st.text_area("Notice Message (Leave blank to remove notice)", value=existing_notice)
-            if st.form_submit_button("📢 Publish / Update Notice"):
-                try:
-                    chk_notice = supabase.table("app_settings").select("*").eq("key", "active_notice").execute()
-                    if chk_notice.data:
-                        supabase.table("app_settings").update({"value": notice_input.strip()}).eq("key", "active_notice").execute()
-                    else:
-                        supabase.table("app_settings").insert({"key": "active_notice", "value": notice_input.strip()}).execute()
-                    st.success("Notice board updated successfully!")
-                    st.rerun()
-                except Exception as ne:
-                    st.error(f"Failed to update notice: {ne}")
-
-        st.divider()
-
-        st.subheader("📢 General Awareness / Advert Video")
-        st.caption("Upload or update the general video displayed at the top of the customer portal.")
-        
-        gen_vid_file = st.file_uploader("Upload General Advert MP4 Video", type=["mp4", "mov", "webm"], key="gen_vid_upload")
-        
-        if gen_vid_file:
-            if st.button("💾 Save General Advert Video"):
-                try:
-                    vid_encoded = get_file_base64(gen_vid_file)
-                    if vid_encoded:
-                        chk_setting = supabase.table("app_settings").select("*").eq("key", "general_video").execute()
-                        if chk_setting.data:
-                            supabase.table("app_settings").update({"value": vid_encoded}).eq("key", "general_video").execute()
-                        else:
-                            supabase.table("app_settings").insert({"key": "general_video", "value": vid_encoded}).execute()
-                        st.success("General awareness video updated successfully!")
-                        st.rerun()
-                except Exception as ex:
-                    st.error(f"Failed to save video: {ex}")
-
-        st.divider()
-        st.subheader("Change Your Password")
-        with st.form("change_pass_form"):
-            old_p = st.text_input("Current Password", type="password")
-            new_p = st.text_input("New Password", type="password")
-            confirm_p = st.text_input("Confirm New Password", type="password")
-            if st.form_submit_button("Update Password"):
-                verify = supabase.table("workers").select("*").ilike("name", user_logged).eq("password", hash_password(old_p)).execute()
-                if not verify.data and user_logged.lower() != "admin":
-                    st.error("Current password is incorrect.")
-                elif new_p != confirm_p:
-                    st.error("New passwords do not match.")
-                elif len(new_p) < 6:
-                    st.error("Password too short (minimum 6 characters).")
+            notice_input = st.text_area("Notice Message", value=existing_notice)
+            if st.form_submit_button("📢 Publish Notice"):
+                chk_notice = supabase.table("app_settings").select("*").eq("key", "active_notice").execute()
+                if chk_notice.data:
+                    supabase.table("app_settings").update({"value": notice_input.strip()}).eq("key", "active_notice").execute()
                 else:
-                    supabase.table("workers").update({"password": hash_password(new_p)}).ilike("name", user_logged).execute()
-                    st.success("Password updated securely in cloud database!")
+                    supabase.table("app_settings").insert({"key": "active_notice", "value": notice_input.strip()}).execute()
+                st.success("Notice updated!")
+                st.rerun()
 
     # CEO TABS
     if role == "CEO":
@@ -923,8 +785,7 @@ if view_mode == "STAFF":
                 ex_val = st.number_input("Amount", 0.0)
                 ex_note = st.text_input("Note")
                 if st.form_submit_button("Record Expense"):
-                    exp_payload = {"category": ex_cat, "amount": float(ex_val), "note": ex_note, "date": date.today().isoformat(), "timestamp": get_now()}
-                    supabase.table("expenses").insert(exp_payload).execute()
+                    supabase.table("expenses").insert({"category": ex_cat, "amount": float(ex_val), "note": ex_note, "date": date.today().isoformat(), "timestamp": get_now()}).execute()
                     st.rerun()
 
         with tabs[8]:
@@ -932,72 +793,40 @@ if view_mode == "STAFF":
             df_workers = fetch_dataframe("workers")
             if not df_workers.empty:
                 st.dataframe(df_workers.drop(columns=['password'], errors='ignore'), use_container_width=True, hide_index=True)
-            col_w1, col_w2 = st.columns(2)
-            with col_w1:
-                st.subheader("Add New Worker")
-                with st.form("worker_add"):
-                    w_n = st.text_input("Worker Name")
-                    w_r = st.selectbox("Role", ["Staff", "CEO"])
-                    w_p = st.text_input("Set Password (Min 6 chars)", type="password")
-                    if st.form_submit_button("Create Account"):
-                        try:
-                            if len(w_p) < 6:
-                                st.error("Password must be at least 6 characters.")
-                            else:
-                                supabase.table("workers").insert({"name": w_n, "role": w_r, "password": hash_password(w_p)}).execute()
-                                st.success("Worker created successfully!")
-                                st.rerun()
-                        except Exception:
-                            st.error("Worker exists or entry error.")
-            with col_w2:
-                st.subheader("Reset Worker Password")
-                with st.form("worker_reset"):
-                    target_worker = st.selectbox("Select Worker", df_workers['name']) if not df_workers.empty else st.selectbox("Select Worker", ["None"])
-                    new_reset_p = st.text_input("New Temporary Password", type="password")
-                    if st.form_submit_button("Reset Password"):
-                        if len(new_reset_p) < 6:
-                            st.error("Password must be at least 6 characters.")
-                        else:
-                            supabase.table("workers").update({"password": hash_password(new_reset_p)}).ilike("name", target_worker).execute()
-                            st.success("Password reset successfully.")
+            with st.form("worker_add"):
+                w_n = st.text_input("Worker Name")
+                w_r = st.selectbox("Role", ["Staff", "CEO"])
+                w_p = st.text_input("Password (Min 6 chars)", type="password")
+                if st.form_submit_button("Create Account"):
+                    if len(w_p) >= 6:
+                        supabase.table("workers").insert({"name": w_n, "role": w_r, "password": hash_password(w_p)}).execute()
+                        st.success("Worker created!")
+                        st.rerun()
 
 # ==========================================
-# 5. INDEPENDENT MULTI-ORDER CUSTOMER PORTAL
+# 5. INDEPENDENT CUSTOMER SHOP PORTAL
 # ==========================================
 else:
-    # 1. NOTICE BOARD
     try:
         notice_res = supabase.table("app_settings").select("value").eq("key", "active_notice").execute()
         if notice_res.data and len(notice_res.data) > 0 and notice_res.data[0].get('value'):
             notice_text = notice_res.data[0]['value'].strip()
             if notice_text:
                 st.markdown(f"""
-                    <div style="background: #1565c0; padding: 14px 20px; border-radius: 10px; color: #ffffff; font-weight: bold; text-align: center; margin-bottom: 15px; font-size: 1.1rem; box-shadow: 0 2px 5px rgba(0,0,0,0.15);">
+                    <div style="background: #1565c0; padding: 14px 20px; border-radius: 10px; color: #ffffff; font-weight: bold; text-align: center; margin-bottom: 15px; font-size: 1.1rem;">
                         📢 {notice_text}
                     </div>
                 """, unsafe_allow_html=True)
     except Exception:
         pass
 
-    # 2. GENERAL AWARENESS VIDEO BOX
-    try:
-        set_res = supabase.table("app_settings").select("value").eq("key", "general_video").execute()
-        if set_res.data and len(set_res.data) > 0 and set_res.data[0].get('value'):
-            gen_vid_b64 = set_res.data[0]['value']
-            vid_bytes_gen = base64.b64decode(gen_vid_b64)
-            st.video(vid_bytes_gen)
-    except Exception:
-        pass
-
-    # 3. GREEN WELCOME BANNER
     st.markdown(f"""
-        <div style="background: linear-gradient(135deg, #1565c0, #0d47a1); padding: 22px; border-radius: 14px; color: white; text-align: center; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(21,101,192,0.35);">
+        <div style="background: linear-gradient(135deg, #1565c0, #0d47a1); padding: 22px; border-radius: 14px; color: white; text-align: center; margin-bottom: 20px;">
             <h1 style="margin: 0; font-size: 2.1rem;">🏢 Welcome to {store_title}</h1>
-            <p style="margin: 6px 0 0 0; font-size: 1.05rem; opacity: 0.95;">Your trusted plug for raw food, beverages, books, and premium provisions!</p>
+            <p style="margin: 6px 0 0 0; font-size: 1.05rem;">Your trusted plug for quality provisions, groceries, and goods!</p>
         </div>
     """, unsafe_allow_html=True)
 
-    # 4. ALWAYS-VISIBLE PROMINENT MOBILE ICON GRID NAVIGATION
     st.markdown("### 📱 Quick Navigation (Tap below)")
     c_grid1, c_grid2 = st.columns(2)
     with c_grid1:
@@ -1034,7 +863,7 @@ else:
         """, unsafe_allow_html=True)
 
         if cart_count > 0:
-            with st.expander("🛍️ View Cart & Checkout New Order (Place independent orders anytime!)", expanded=True):
+            with st.expander("🛍️ View Cart & Checkout", expanded=True):
                 cart_df = pd.DataFrame(st.session_state.cart)
                 st.dataframe(cart_df[['name', 'unit', 'qty', 'total_price']], use_container_width=True, hide_index=True)
                 st.markdown(f"### Grand Total: ₦{cart_total:,.2f}")
@@ -1042,17 +871,13 @@ else:
                 with st.form("checkout_cart_form"):
                     c_name_cart = st.text_input("Your Full Name", value=st.session_state.active_cust_name)
                     c_phone_cart = normalize_phone(st.text_input("Your Phone Number", value=st.session_state.active_cust_phone))
-                    c_details_cart = st.text_area("📍 Delivery Address & Order Notes", placeholder="Include street address, nearest landmark, delivery preferences, or special instructions...")
+                    c_details_cart = st.text_area("📍 Delivery Address & Order Notes")
                     
-                    checkout_btn = st.form_submit_button("🚀 Submit Independent Order")
-                    
-                    if checkout_btn:
+                    if st.form_submit_button("🚀 Submit Independent Order"):
                         if c_name_cart.strip() and c_phone_cart.strip():
                             st.session_state.active_cust_name = c_name_cart.strip()
                             st.session_state.active_cust_phone = c_phone_cart.strip()
-
                             checkout_timestamp = get_now()
-                            receipt_items = []
 
                             for item in st.session_state.cart:
                                 order_payload = {
@@ -1066,24 +891,12 @@ else:
                                     "timestamp": checkout_timestamp
                                 }
                                 supabase.table("orders").insert(order_payload).execute()
-                                receipt_items.append({
-                                    "name": item['name'], "unit": item['unit'], 
-                                    "qty": item['qty'], "price": item['unit_price'], "total": item['total_price'],
-                                    "item_status": "Order Placed"
-                                })
                             
                             st.session_state.cart = []
                             st.session_state.cust_active_page = "📜 Transaction History"
-                            st.success("✅ Order submitted successfully! You can now place another independent order or view your receipt history.")
+                            st.success("✅ Order submitted successfully!")
                             st.rerun()
-                        else:
-                            st.error("Please enter both Name and Phone Number.")
-                
-                if st.button("🗑️ Clear Cart"):
-                    st.session_state.cart = []
-                    st.rerun()
 
-        # DIRECT NON-CACHED SHOP FETCH TO REFLECT SUPABASE DATA INSTANTLY
         df_shop = fetch_dataframe("products")
 
         if not df_shop.empty:
@@ -1091,7 +904,6 @@ else:
                 df_shop['category'] = 'General'
 
             categories = ["All Categories"] + sorted(df_shop['category'].dropna().unique().tolist())
-            
             col_filt1, col_filt2 = st.columns([1, 2])
             with col_filt1:
                 selected_cat = st.selectbox("📂 Category", categories)
@@ -1109,9 +921,9 @@ else:
                     with st.container():
                         col_img, col_info, col_order = st.columns([1, 2, 1.5])
                         with col_img:
-                            img_bytes = display_image_base64(s_row.get('img_data'))
-                            if img_bytes:
-                                st.image(img_bytes, width=180)
+                            img_url = s_row.get('img_data')
+                            if img_url and str(img_url).startswith("http"):
+                                st.image(img_url, width=180)
                             else:
                                 st.info("No Image")
                         with col_info:
@@ -1120,21 +932,9 @@ else:
                             st.write(s_row.get('description', ''))
                             
                             vid_link = str(s_row.get('video_url', '')).strip()
-                            has_direct_vid = s_row.get('video_data') and str(s_row['video_data']).strip() not in ["None", "", "nan"]
-                            has_url_vid = vid_link and vid_link.lower() not in ["none", "", "nan"]
-
-                            if has_direct_vid or has_url_vid:
+                            if vid_link and vid_link.lower() not in ["none", "", "nan"]:
                                 with st.expander("🎥 Watch Video Advert"):
-                                    if has_url_vid and vid_link.startswith("http"):
-                                        st.video(vid_link)
-                                    elif has_direct_vid:
-                                        try:
-                                            vid_bytes = base64.b64decode(s_row['video_data'])
-                                            st.video(vid_bytes)
-                                        except Exception:
-                                            st.error("Video file error.")
-                                    else:
-                                        st.info("Invalid video link format.")
+                                    st.video(vid_link)
                                     
                         with col_order:
                             m_lbl = s_row.get('unit_main_label', 'Carton') or 'Carton'
@@ -1156,25 +956,17 @@ else:
                                     "unit_price": float(price),
                                     "total_price": float(total_calc)
                                 })
-                                st.success(f"Added {qty_choice} {unit_choice}(s) of {s_row['name']} to cart!")
+                                st.success(f"Added to cart!")
                                 st.rerun()
                         st.divider()
-            else:
-                st.warning("No products matching filter.")
         else:
             st.warning("No products available in stock yet.")
 
-    # PAGE 2: MULTI-ITEM SPECIAL REQUEST
+    # PAGE 2: SPECIAL REQUEST
     elif st.session_state.cust_active_page == "📝 Multi-Item Special Request":
         st.subheader("📝 Multi-Item Special Request")
-        st.caption("Enter each item name and quantity separately below:")
-        
-        cust_n = st.text_input("Your Full Name", value=st.session_state.active_cust_name, key="req_name_input")
-        cust_p = normalize_phone(st.text_input("Your Phone Number", value=st.session_state.active_cust_phone, key="req_phone_input"))
-        c_details_req = st.text_area("📍 Delivery Address & General Notes", placeholder="Describe landmark, delivery area, or special notes...", key="req_details_input")
-
-        st.markdown("---")
-        st.markdown("#### 🛒 Requested Items List")
+        cust_n = st.text_input("Your Full Name", value=st.session_state.active_cust_name)
+        cust_p = normalize_phone(st.text_input("Your Phone Number", value=st.session_state.active_cust_phone))
         
         for idx, entry in enumerate(st.session_state.request_items_temp):
             c_r1, c_r2 = st.columns([3, 1])
@@ -1183,28 +975,16 @@ else:
             with c_r2:
                 entry['qty'] = st.number_input(f"Qty", min_value=1, value=entry['qty'], key=f"req_qty_{idx}")
         
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
-            if st.button("➕ Add Item Row", use_container_width=True):
-                st.session_state.request_items_temp.append({"item": "", "qty": 1})
-                st.rerun()
-        with col_m2:
-            if len(st.session_state.request_items_temp) > 1:
-                if st.button("➖ Remove Row", use_container_width=True):
-                    st.session_state.request_items_temp.pop()
-                    st.rerun()
+        if st.button("➕ Add Item Row"):
+            st.session_state.request_items_temp.append({"item": "", "qty": 1})
+            st.rerun()
 
-        st.markdown("---")
         if st.button("🚀 Submit Independent Special Request", use_container_width=True):
             if cust_n.strip() and cust_p.strip():
-                st.session_state.active_cust_name = cust_n.strip()
-                st.session_state.active_cust_phone = cust_p.strip()
-
-                valid_entries = [e for e in st.session_state.request_items_temp if e['item'].strip()]
-                if valid_entries:
-                    batch_timestamp = get_now()
-                    for e in valid_entries:
-                        order_payload = {
+                batch_timestamp = get_now()
+                for e in st.session_state.request_items_temp:
+                    if e['item'].strip():
+                        supabase.table("orders").insert({
                             "customer": cust_n.strip(),
                             "item": f"SPECIAL: {e['item'].strip()}",
                             "qty": int(e['qty']),
@@ -1213,170 +993,52 @@ else:
                             "total_price": 0.0,
                             "date": date.today().isoformat(),
                             "timestamp": batch_timestamp
-                        }
-                        supabase.table("orders").insert(order_payload).execute()
-                    
-                    st.session_state.request_items_temp = [{"item": "", "qty": 1}]
-                    st.session_state.cust_active_page = "📜 Transaction History"
-                    st.success("✅ Independent special request submitted! You can place another request or check your history.")
-                    st.rerun()
-                else:
-                    st.error("Please enter at least one valid item name.")
-            else:
-                st.error("Please fill in your Name and Phone Number.")
+                        }).execute()
+                st.session_state.request_items_temp = [{"item": "", "qty": 1}]
+                st.session_state.cust_active_page = "📜 Transaction History"
+                st.success("Special request submitted!")
+                st.rerun()
 
     # PAGE 3: TRACK ORDER
     elif st.session_state.cust_active_page == "🔍 Track Order":
         st.subheader("🔍 Track Order Status")
-        track_phone = normalize_phone(st.text_input("Enter your Phone Number to check status", value=st.session_state.active_cust_phone))
+        track_phone = normalize_phone(st.text_input("Enter Phone Number", value=st.session_state.active_cust_phone))
         if track_phone.strip():
-            st.session_state.active_cust_phone = track_phone.strip()
-            try:
-                res_track = supabase.table("orders").select("id, item, qty, status, total_price, date, timestamp").eq("contact_phone", track_phone.strip()).order("id", desc=True).execute()
-                if res_track.data:
-                    st.dataframe(pd.DataFrame(res_track.data), use_container_width=True, hide_index=True)
-                else:
-                    st.info("No orders found for this number.")
-            except Exception:
-                pass
+            res_track = supabase.table("orders").select("id, item, qty, status, total_price, date, timestamp").eq("contact_phone", track_phone.strip()).order("id", desc=True).execute()
+            if res_track.data:
+                st.dataframe(pd.DataFrame(res_track.data), use_container_width=True, hide_index=True)
+            else:
+                st.info("No orders found.")
 
     # PAGE 4: SUPPORT CHAT
     elif st.session_state.cust_active_page == "💬 Chat with Us":
         st.subheader("💬 Support Chat")
-        c_phone_chat = normalize_phone(st.text_input("Enter your Phone Number to start chatting", value=st.session_state.active_cust_phone, key="cust_chat_phone"))
-        
+        c_phone_chat = normalize_phone(st.text_input("Enter Phone Number", value=st.session_state.active_cust_phone))
         if c_phone_chat.strip():
-            st.session_state.active_cust_phone = c_phone_chat.strip()
-            try:
-                chat_res = supabase.table("messages").select("*").eq("customer_phone", c_phone_chat.strip()).order("id").execute()
-                if chat_res.data:
-                    for m in chat_res.data:
-                        sender_tag = "🛍️ You" if m['sender'] == "Customer" else f"👤 {m['sender']}"
-                        st.markdown(f"**{sender_tag}** *({m['timestamp']})*:\n> {m['message']}")
-                else:
-                    st.info("No previous messages found. Send your first message below!")
+            chat_res = supabase.table("messages").select("*").eq("customer_phone", c_phone_chat.strip()).order("id").execute()
+            for m in chat_res.data:
+                st.markdown(f"**{m['sender']}** : {m['message']}")
+            with st.form("cust_msg_form", clear_on_submit=True):
+                user_msg = st.text_input("Type message...")
+                if st.form_submit_button("Send"):
+                    supabase.table("messages").insert({"sender": "Customer", "customer_phone": c_phone_chat.strip(), "message": user_msg, "timestamp": get_now()}).execute()
+                    st.rerun()
 
-                st.divider()
-                with st.form("cust_msg_form", clear_on_submit=True):
-                    user_msg = st.text_input("Type your message here...")
-                    if st.form_submit_button("📤 Send Message"):
-                        if user_msg.strip():
-                            msg_payload = {
-                                "sender": "Customer",
-                                "customer_phone": c_phone_chat.strip(),
-                                "message": user_msg.strip(),
-                                "timestamp": get_now()
-                            }
-                            supabase.table("messages").insert(msg_payload).execute()
-                            st.rerun()
-            except Exception as e:
-                st.error(f"Chat connection error: {e}")
-        else:
-            st.warning("Please enter your phone number to load or start a chat thread.")
-
-    # PAGE 5: TRANSACTION HISTORY & RECEIPTS LEDGER
+    # PAGE 5: TRANSACTION HISTORY
     elif st.session_state.cust_active_page == "📜 Transaction History":
-        st.subheader("📜 Customer Transaction & Receipt History")
-        st.caption("View all your past orders, active checkouts, and finished purchase receipts grouped by timestamp.")
-        
-        history_phone = normalize_phone(st.text_input("Enter your Phone Number to load your transaction history", value=st.session_state.active_cust_phone))
-        
+        st.subheader("📜 Customer Transaction History")
+        history_phone = normalize_phone(st.text_input("Enter Phone Number to load history", value=st.session_state.active_cust_phone))
         if history_phone.strip():
-            st.session_state.active_cust_phone = history_phone.strip()
-            try:
-                all_cust_orders = supabase.table("orders").select("*").eq("contact_phone", history_phone.strip()).order("timestamp", desc=True).execute()
+            all_cust_orders = supabase.table("orders").select("*").eq("contact_phone", history_phone.strip()).order("timestamp", desc=True).execute()
+            if all_cust_orders.data:
+                batches = {}
+                for ord_row in all_cust_orders.data:
+                    t_stamp = ord_row['timestamp']
+                    batches.setdefault(t_stamp, []).append(ord_row)
                 
-                if all_cust_orders.data:
-                    batches = {}
-                    for ord_row in all_cust_orders.data:
-                        t_stamp = ord_row['timestamp']
-                        if t_stamp not in batches:
-                            batches[t_stamp] = []
-                        batches[t_stamp].append(ord_row)
+                for batch_ts, ord_group in batches.items():
+                    b_total = sum([o['total_price'] for o in ord_group])
+                    with st.expander(f"📦 Transaction on {batch_ts} — Total: ₦{b_total:,.2f}"):
+                        st.dataframe(pd.DataFrame(ord_group)[['item', 'qty', 'status', 'total_price']], use_container_width=True, hide_index=True)
 
-                    st.success(f"Found {len(batches)} independent transaction batch(es) for {history_phone.strip()}.")
-                    st.divider()
-
-                    for batch_ts, ord_group in batches.items():
-                        b_date = ord_group[0]['date']
-                        b_cust = ord_group[0]['customer']
-                        
-                        b_total = sum([o['total_price'] for o in ord_group])
-                        
-                        with st.expander(f"📦 Transaction on {batch_ts} — Total: ₦{b_total:,.2f} ({len(ord_group)} item(s))", expanded=False):
-                            st.markdown(f"**Customer Name:** {b_cust}")
-                            st.markdown(f"**Phone Number:** {history_phone.strip()}")
-                            st.markdown(f"**Transaction Timestamp:** {batch_ts}")
-                            
-                            rows_html = ""
-                            history_items_list = []
-                            for item in ord_group:
-                                i_name = str(item['item']).replace("SPECIAL:", "").strip()
-                                i_qty = item['qty']
-                                i_tot = item['total_price']
-                                i_price = i_tot / i_qty if i_qty > 0 else 0.0
-                                i_status = item['status']
-                                
-                                history_items_list.append({"name": i_name, "unit": "Item", "qty": i_qty, "price": i_price, "total": i_tot})
-                                status_color = "#2e7d32" if "Delivered" in i_status or "Available" in i_status else "#f57c00"
-                                
-                                rows_html += f"""
-                                <tr style="border-bottom: 1px solid #e0e0e0;">
-                                    <td style="padding: 10px; font-weight: 500;">{i_name}</td>
-                                    <td style="padding: 10px; text-align: center;">{i_qty}</td>
-                                    <td style="padding: 10px; text-align: right;">₦{i_price:,.2f}</td>
-                                    <td style="padding: 10px; text-align: right; font-weight: bold;">₦{i_tot:,.2f}</td>
-                                    <td style="padding: 10px; text-align: center; color: {status_color}; font-weight: bold;">{i_status}</td>
-                                </tr>
-                                """
-
-                            receipt_box_html = f"""
-                            <div style="background: #ffffff; color: #111; padding: 20px; border-radius: 10px; border: 2px solid #1565c0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin-top: 10px;">
-                                <div style="text-align: center;">
-                                    <h3 style="margin: 0; color: #1565c0;">🏢 {store_title}</h3>
-                                    <p style="margin: 2px 0; font-size: 0.85rem; color: #666;">Official Transaction Receipt</p>
-                                </div>
-                                <hr style="border: none; border-top: 1px solid #ddd; margin: 10px 0;">
-                                <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
-                                    <thead>
-                                        <tr style="background-color: #f5f7fa; border-bottom: 2px solid #ddd;">
-                                            <th style="padding: 8px; text-align: left;">Item</th>
-                                            <th style="padding: 8px; text-align: center;">Qty</th>
-                                            <th style="padding: 8px; text-align: right;">Price</th>
-                                            <th style="padding: 8px; text-align: right;">Total</th>
-                                            <th style="padding: 8px; text-align: center;">Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {rows_html}
-                                    </tbody>
-                                </table>
-                                <h4 style="text-align: right; color: #1565c0; margin: 10px 0 0 0;">Grand Total: ₦{b_total:,.2f}</h4>
-                            </div>
-                            """
-                            components.html(receipt_box_html, height=280 + (len(ord_group) * 40), scrolling=True)
-
-                            cust_wa_url = generate_whatsapp_link(history_phone.strip(), f"Transaction Receipt ({batch_ts})", b_cust, history_items_list, b_total)
-                            st.markdown(f"""
-                                <a href="{cust_wa_url}" target="_blank">
-                                    <button style="width:100%; background-color:#25d366; color:white; padding:10px; border:none; border-radius:8px; font-size:1rem; font-weight:bold; cursor:pointer; margin-top:8px;">
-                                        💬 Share Receipt via WhatsApp
-                                    </button>
-                                </a>
-                            """, unsafe_allow_html=True)
-
-                            available_ids = [int(o['id']) for o in ord_group if "Available" in o['status'] and "Unavailable" not in o['status']]
-                            if available_ids:
-                                if st.button(f"🚀 Confirm & Place Final Order for Available Items (Batch {batch_ts})", key=f"conf_batch_{batch_ts}", use_container_width=True):
-                                    for aid in available_ids:
-                                        supabase.table("orders").update({"status": "Order Placed & Confirmed"}).eq("id", aid).execute()
-                                    st.success("✅ Order confirmed for available items!")
-                                    st.rerun()
-                else:
-                    st.info("No transaction history or orders found for this phone number.")
-            except Exception as hist_e:
-                st.error(f"Error loading transaction history: {hist_e}")
-        else:
-            st.info("Enter your phone number above to inspect all your past independent receipts and active transaction histories.")
-
-st.sidebar.caption(f"{store_title} v14.2 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v15.0 | {date.today().year}")
