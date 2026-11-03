@@ -59,7 +59,7 @@ try:
 except Exception:
     pass
 
-@st.cache_data(ttl=15)
+@st.cache_data(ttl=10)
 def fetch_dataframe_cached(table_name):
     """Cached data fetcher to speed up product browsing and inventory."""
     try:
@@ -298,17 +298,17 @@ if view_mode == "STAFF":
         if not df_p_pos.empty:
             col_pos1, col_pos2 = st.columns([2, 1])
             with col_pos1:
-                sel_item = st.selectbox("Search & Select Item", df_p_pos['name'])
+                sel_item = st.selectbox("Search & Select Item", df_p_pos['name'], key="pos_sel_item")
                 p = df_p_pos[df_p_pos['name'] == sel_item].iloc[0]
                 
                 m_label = p.get('unit_main_label', 'Carton') or 'Carton'
                 p_label = p.get('unit_pack_label', 'Pack') or 'Pack'
                 r_label = p.get('unit_retail_label', 'Retail Unit') or 'Retail Unit'
                 
-                sale_unit = st.radio("Selling Unit", [m_label, p_label, r_label])
-                sale_qty = st.number_input("Quantity", min_value=1, value=1)
-                c_name_pos = st.text_input("Customer Name")
-                c_phone_pos = normalize_phone(st.text_input("Customer Phone Number"))
+                sale_unit = st.radio("Selling Unit", [m_label, p_label, r_label], key="pos_sale_unit")
+                sale_qty = st.number_input("Quantity", min_value=1, value=1, key="pos_sale_qty")
+                c_name_pos = st.text_input("Customer Name", key="pos_cust_name")
+                c_phone_pos = normalize_phone(st.text_input("Customer Phone Number", key="pos_cust_phone"))
             with col_pos2:
                 up = p['price_carton'] if sale_unit == m_label else (p['price_pack'] if sale_unit == p_label else p['price_retail'])
                 grand_total = up * sale_qty
@@ -438,26 +438,30 @@ if view_mode == "STAFF":
         st.divider()
         
         st.subheader("📝 Add / Update Item")
-        action = st.radio("Action", ["Add New Item", "Update Existing Item"], horizontal=True)
+        action = st.radio("Action", ["Add New Item", "Update Existing Item"], horizontal=True, key="inv_action_radio")
         
+        curr_data = {
+            "name": "", "cost": 0.0, "price_carton": 0.0, "price_pack": 0.0, "price_retail": 0.0,
+            "qty_cartons": 0, "packs_per_carton": 1, "units_per_pack": 1, "shelf": "",
+            "expiry": str(date.today()), "description": "", "img_data": "", "video_url": "",
+            "unit_main_label": "Carton", "unit_pack_label": "Pack", "unit_retail_label": "Retail Unit",
+            "category": "General"
+        }
+        
+        target_id = None
         if action == "Update Existing Item" and not df_inv.empty:
-            target = st.selectbox("Select Item to Update", df_inv['name'])
-            curr_data = df_inv[df_inv['name'] == target].iloc[0]
-        else:
-            curr_data = {
-                "name": "", "cost": 0.0, "price_carton": 0.0, "price_pack": 0.0, "price_retail": 0.0,
-                "qty_cartons": 0, "packs_per_carton": 1, "units_per_pack": 1, "shelf": "",
-                "expiry": str(date.today()), "description": "", "img_data": "", "video_url": "",
-                "unit_main_label": "Carton", "unit_pack_label": "Pack", "unit_retail_label": "Retail Unit",
-                "category": "General"
-            }
-        
+            target = st.selectbox("Select Item to Update", df_inv['name'], key="update_item_selectbox")
+            selected_row = df_inv[df_inv['name'] == target]
+            if not selected_row.empty:
+                curr_data = selected_row.iloc[0].to_dict()
+                target_id = int(curr_data.get('id'))
+
         st.write("📷 **Product Image Input (Uploaded instantly to Cloudinary)**")
         img_tab1, img_tab2 = st.tabs(["📁 Upload Image File", "📋 Paste from Clipboard"])
         chosen_image = None
 
         with img_tab1:
-            n_file = st.file_uploader("Choose image file", type=["png", "jpg", "jpeg"], label_visibility="collapsed")
+            n_file = st.file_uploader("Choose image file", type=["png", "jpg", "jpeg"], label_visibility="collapsed", key="img_file_uploader")
             if n_file: 
                 chosen_image = n_file
 
@@ -479,49 +483,50 @@ if view_mode == "STAFF":
 
         st.divider()
         st.write("🎥 **Product Video File Upload (Hosted on Cloudinary)**")
-        vid_file = st.file_uploader("Upload Direct MP4 Video File", type=["mp4", "mov", "webm"])
+        vid_file = st.file_uploader("Upload Direct MP4 Video File", type=["mp4", "mov", "webm"], key="vid_file_uploader")
 
         with st.form("inventory_form"):
             st.info("✏️ **Category & Box Headings**: Type any category name of your choice below.")
             
             default_cat = str(curr_data.get('category', 'General') or 'General')
-            sel_category = st.text_input("Product Category", value=default_cat).strip().title()
+            sel_category = st.text_input("Product Category", value=default_cat, key="form_category").strip().title()
 
             st.divider()
             ul1, ul2, ul3 = st.columns(3)
             with ul1:
-                custom_main_label = st.text_input("Main Unit Name (e.g. Carton)", value=str(curr_data.get('unit_main_label', 'Carton') or 'Carton'))
+                custom_main_label = st.text_input("Main Unit Name (e.g. Carton)", value=str(curr_data.get('unit_main_label', 'Carton') or 'Carton'), key="form_main_label")
             with ul2:
-                custom_pack_label = st.text_input("Sub-Unit Name (e.g. Pack)", value=str(curr_data.get('unit_pack_label', 'Pack') or 'Pack'))
+                custom_pack_label = st.text_input("Sub-Unit Name (e.g. Pack)", value=str(curr_data.get('unit_pack_label', 'Pack') or 'Pack'), key="form_pack_label")
             with ul3:
-                custom_retail_label = st.text_input("Retail Name (e.g. Piece)", value=str(curr_data.get('unit_retail_label', 'Retail Unit') or 'Retail Unit'))
+                custom_retail_label = st.text_input("Retail Name (e.g. Piece)", value=str(curr_data.get('unit_retail_label', 'Retail Unit') or 'Retail Unit'), key="form_retail_label")
 
             st.divider()
 
             ca, cb, cc = st.columns(3)
             with ca:
-                n_name = st.text_input("Product Name", value=str(curr_data['name'])).strip()
-                n_cost = st.number_input(f"Cost Price (Per {custom_main_label})", value=float(curr_data.get('cost', 0.0)))
-                n_shelf = st.text_input("Shelf Location", value=str(curr_data.get('shelf', '')))
+                n_name = st.text_input("Product Name", value=str(curr_data.get('name', '')), key="form_prod_name").strip()
+                n_cost = st.number_input(f"Cost Price (Per {custom_main_label})", value=float(curr_data.get('cost', 0.0)), key="form_cost")
+                n_shelf = st.text_input("Shelf Location", value=str(curr_data.get('shelf', '')), key="form_shelf")
             with cb:
-                n_pc = st.number_input(f"Price (Per {custom_main_label})", value=float(curr_data.get('price_carton', 0.0)))
-                n_pp = st.number_input(f"Price (Per {custom_pack_label})", value=float(curr_data.get('price_pack', 0.0)))
-                n_pr = st.number_input(f"Price (Per {custom_retail_label})", value=float(curr_data.get('price_retail', 0.0)))
+                n_pc = st.number_input(f"Price (Per {custom_main_label})", value=float(curr_data.get('price_carton', 0.0)), key="form_price_carton")
+                n_pp = st.number_input(f"Price (Per {custom_pack_label})", value=float(curr_data.get('price_pack', 0.0)), key="form_price_pack")
+                n_pr = st.number_input(f"Price (Per {custom_retail_label})", value=float(curr_data.get('price_retail', 0.0)), key="form_price_retail")
             with cc:
-                n_stock = st.number_input(f"Total Stock ({custom_main_label}s)", value=float(curr_data.get('qty_cartons', 0)))
-                n_ppc = st.number_input(f"Count of {custom_pack_label}s in 1 {custom_main_label}", value=int(curr_data.get('packs_per_carton', 1)), min_value=1)
-                n_upp = st.number_input(f"Count of {custom_retail_label}s in 1 {custom_pack_label}", value=int(curr_data.get('units_per_pack', 1)), min_value=1)
+                n_stock = st.number_input(f"Total Stock ({custom_main_label}s)", value=float(curr_data.get('qty_cartons', 0)), key="form_qty_cartons")
+                n_ppc = st.number_input(f"Count of {custom_pack_label}s in 1 {custom_main_label}", value=int(curr_data.get('packs_per_carton', 1)), min_value=1, key="form_packs_per_carton")
+                n_upp = st.number_input(f"Count of {custom_retail_label}s in 1 {custom_pack_label}", value=int(curr_data.get('units_per_pack', 1)), min_value=1, key="form_units_per_pack")
             
             try:
                 default_exp = datetime.strptime(str(curr_data.get('expiry')), '%Y-%m-%d').date()
             except Exception:
                 default_exp = date.today()
 
-            n_exp = st.date_input("Expiry Date", value=default_exp)
-            n_video_url = st.text_input("OR YouTube / Cloud Video Link", value=str(curr_data.get('video_url', '') or ''))
-            n_desc = st.text_area("Product Description", value=str(curr_data.get('description', '')))
+            n_exp = st.date_input("Expiry Date", value=default_exp, key="form_expiry")
+            n_video_url = st.text_input("OR YouTube / Cloud Video Link", value=str(curr_data.get('video_url', '') or ''), key="form_video_url")
+            n_desc = st.text_area("Product Description", value=str(curr_data.get('description', '')), key="form_description")
             
-            if st.form_submit_button("💾 Save Product Data"):
+            submitted_form = st.form_submit_button("💾 Save Product Data")
+            if submitted_form:
                 if not n_name:
                     st.error("Product Name is required.")
                 elif not sel_category:
@@ -545,8 +550,8 @@ if view_mode == "STAFF":
                     safe_desc = str(n_desc).encode('utf-8', 'ignore').decode('utf-8').strip() if n_desc else ""
 
                     # Upload to Cloudinary if new files are provided
-                    img_url = upload_image_to_cloudinary(chosen_image) if chosen_image else curr_data.get('img_data')
-                    vid_uploaded_url = upload_video_to_cloudinary(vid_file) if vid_file else None
+                    img_url = upload_image_to_cloudinary(chosen_image) if chosen_image is not None else curr_data.get('img_data')
+                    vid_uploaded_url = upload_video_to_cloudinary(vid_file) if vid_file is not None else None
                     
                     final_video_link = vid_uploaded_url if vid_uploaded_url else (n_video_url.strip() if n_video_url else curr_data.get('video_url', ''))
 
@@ -574,8 +579,8 @@ if view_mode == "STAFF":
                     prod_payload = sanitize_payload(raw_payload)
                     
                     try:
-                        if action == "Update Existing Item" and 'id' in curr_data:
-                            supabase.table("products").update(prod_payload).eq("id", int(curr_data['id'])).execute()
+                        if action == "Update Existing Item" and target_id is not None:
+                            supabase.table("products").update(prod_payload).eq("id", target_id).execute()
                             st.success(f"Updated '{safe_name}' successfully!")
                         else:
                             supabase.table("products").insert(prod_payload).execute()
@@ -616,7 +621,7 @@ if view_mode == "STAFF":
                     label = f"Batch Request: {cust} ({phone}) — {len(group)} Item(s) [{ts}]"
                     request_batches[label] = group
 
-                selected_batch_label = st.selectbox("Select Customer Request Batch", list(request_batches.keys()))
+                selected_batch_label = st.selectbox("Select Customer Request Batch", list(request_batches.keys()), key="audit_batch_sel")
                 selected_group = request_batches[selected_batch_label]
 
                 with st.form("multi_item_audit_form"):
@@ -693,7 +698,7 @@ if view_mode == "STAFF":
             res_msg = supabase.table("messages").select("customer_phone").execute()
             if res_msg.data:
                 unique_phones = list(set([m['customer_phone'] for m in res_msg.data]))
-                selected_phone = st.selectbox("Select Customer Phone Number to Chat", unique_phones)
+                selected_phone = st.selectbox("Select Customer Phone Number to Chat", unique_phones, key="chat_phone_sel")
                 
                 if selected_phone:
                     st.subheader(f"Chat History with {selected_phone}")
@@ -733,10 +738,10 @@ if view_mode == "STAFF":
             st.subheader("📝 Update or Clear a Debt")
             col_ed1, col_ed2 = st.columns(2)
             with col_ed1:
-                selected_id = st.selectbox("Select Debt ID to Update", df_debtors['id'])
+                selected_id = st.selectbox("Select Debt ID to Update", df_debtors['id'], key="debt_id_sel")
                 debt_to_edit = df_debtors[df_debtors['id'] == selected_id].iloc[0]
             with col_ed2:
-                edit_action = st.radio("What do you want to do?", ["Update Amount", "Mark as Fully Paid (Delete)"])
+                edit_action = st.radio("What do you want to do?", ["Update Amount", "Mark as Fully Paid (Delete)"], key="debt_action_radio")
 
             if edit_action == "Update Amount":
                 with st.form("update_debt_form"):
@@ -921,9 +926,9 @@ else:
             categories = ["All Categories"] + sorted(df_shop['category'].dropna().unique().tolist())
             col_filt1, col_filt2 = st.columns([1, 2])
             with col_filt1:
-                selected_cat = st.selectbox("📂 Category", categories)
+                selected_cat = st.selectbox("📂 Category", categories, key="shop_cat_sel")
             with col_filt2:
-                search_query = st.text_input("🔍 Search products...", placeholder="Type product name...")
+                search_query = st.text_input("🔍 Search products...", placeholder="Type product name...", key="shop_search")
 
             if selected_cat != "All Categories":
                 df_shop = df_shop[df_shop['category'] == selected_cat]
@@ -980,8 +985,8 @@ else:
     # PAGE 2: SPECIAL REQUEST
     elif st.session_state.cust_active_page == "📝 Multi-Item Special Request":
         st.subheader("📝 Multi-Item Special Request")
-        cust_n = st.text_input("Your Full Name", value=st.session_state.active_cust_name)
-        cust_p = normalize_phone(st.text_input("Your Phone Number", value=st.session_state.active_cust_phone))
+        cust_n = st.text_input("Your Full Name", value=st.session_state.active_cust_name, key="req_cust_name")
+        cust_p = normalize_phone(st.text_input("Your Phone Number", value=st.session_state.active_cust_phone, key="req_cust_phone"))
         
         for idx, entry in enumerate(st.session_state.request_items_temp):
             c_r1, c_r2 = st.columns([3, 1])
@@ -1017,7 +1022,7 @@ else:
     # PAGE 3: TRACK ORDER
     elif st.session_state.cust_active_page == "🔍 Track Order":
         st.subheader("🔍 Track Order Status")
-        track_phone = normalize_phone(st.text_input("Enter Phone Number", value=st.session_state.active_cust_phone))
+        track_phone = normalize_phone(st.text_input("Enter Phone Number", value=st.session_state.active_cust_phone, key="track_phone_input"))
         if track_phone.strip():
             res_track = supabase.table("orders").select("id, item, qty, status, total_price, date, timestamp").eq("contact_phone", track_phone.strip()).order("id", desc=True).execute()
             if res_track.data:
@@ -1028,7 +1033,7 @@ else:
     # PAGE 4: SUPPORT CHAT
     elif st.session_state.cust_active_page == "💬 Chat with Us":
         st.subheader("💬 Support Chat")
-        c_phone_chat = normalize_phone(st.text_input("Enter Phone Number", value=st.session_state.active_cust_phone))
+        c_phone_chat = normalize_phone(st.text_input("Enter Phone Number", value=st.session_state.active_cust_phone, key="cust_chat_phone"))
         if c_phone_chat.strip():
             chat_res = supabase.table("messages").select("*").eq("customer_phone", c_phone_chat.strip()).order("id").execute()
             for m in chat_res.data:
@@ -1042,7 +1047,7 @@ else:
     # PAGE 5: TRANSACTION HISTORY
     elif st.session_state.cust_active_page == "📜 Transaction History":
         st.subheader("📜 Customer Transaction History")
-        history_phone = normalize_phone(st.text_input("Enter Phone Number to load history", value=st.session_state.active_cust_phone))
+        history_phone = normalize_phone(st.text_input("Enter Phone Number to load history", value=st.session_state.active_cust_phone, key="hist_phone_input"))
         if history_phone.strip():
             all_cust_orders = supabase.table("orders").select("*").eq("contact_phone", history_phone.strip()).order("timestamp", desc=True).execute()
             if all_cust_orders.data:
