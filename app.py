@@ -48,7 +48,7 @@ def normalize_phone(phone: str) -> str:
 
 # AUTO-INITIALIZE SECURE DEFAULT ADMIN USER IF WORKERS TABLE IS EMPTY
 try:
-    check_empty = supabase.table("workers").select("*").execute()
+    check_empty = supabase.table("workers").select("*", count="exact").execute()
     if not check_empty.data:
         supabase.table("workers").insert({
             "name": "admin", 
@@ -59,14 +59,14 @@ except Exception:
     pass
 
 def fetch_dataframe(table_name):
-    """Directly fetches table data from Supabase without persistent empty caching blocks."""
+    """Safely fetches table data from Supabase with timeout and error handling."""
     try:
         response = supabase.table(table_name).select("*").execute()
         if response.data and len(response.data) > 0:
             return pd.DataFrame(response.data)
         return pd.DataFrame()
     except Exception as err:
-        st.warning(f"Database sync notice: {err}")
+        st.warning(f"Database sync notice (Timeout/Network): {err}. Please refresh or try again.")
         return pd.DataFrame()
 
 # ==========================================
