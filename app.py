@@ -212,12 +212,12 @@ st.sidebar.title("🏢 Sammyreks Portal")
 st.sidebar.markdown("---")
 
 if not st.session_state.auth["logged_in"]:
-    auth_mode = st.sidebar.selectbox("Choose Portal", ["🛍️ Customer Shop", "🔑 Staff/Admin Login"])
+    auth_mode = st.sidebar.selectbox("Choose Portal", ["🛍️ Customer Shop", "🔑 Staff/Admin Login"], key="auth_mode_sel")
     
     if auth_mode == "🔑 Staff/Admin Login":
         with st.sidebar.form("login_form"):
-            user_input = st.text_input("Username").strip()
-            pass_input = st.text_input("Password", type="password").strip()
+            user_input = st.text_input("Username", key="login_user").strip()
+            pass_input = st.text_input("Password", type="password", key="login_pass").strip()
             if st.form_submit_button("Login"):
                 if not user_input or not pass_input:
                     st.error("Please enter both Username and Password.")
@@ -251,7 +251,7 @@ if not st.session_state.auth["logged_in"]:
     view_mode = "CUSTOMER"
 else:
     st.sidebar.success(f"Logged in: {st.session_state.auth['user']} ({st.session_state.auth['role']})")
-    if st.sidebar.button("Logout"):
+    if st.sidebar.button("Logout", key="logout_btn"):
         st.session_state.auth = {"logged_in": False, "user": None, "role": None}
         st.rerun()
     view_mode = "STAFF"
@@ -316,7 +316,7 @@ if view_mode == "STAFF":
                 
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
-                    if st.button("🏁 Cash Sale & Delivery Receipt", use_container_width=True):
+                    if st.button("🏁 Cash Sale & Delivery Receipt", use_container_width=True, key="pos_cash_btn"):
                         packs_per_c = p.get('packs_per_carton', 1) or 1
                         units_per_p = p.get('units_per_pack', 1) or 1
                         
@@ -356,7 +356,7 @@ if view_mode == "STAFF":
                         st.rerun()
                 
                 with col_btn2:
-                    if st.button("📓 Record Debt", use_container_width=True):
+                    if st.button("📓 Record Debt", use_container_width=True, key="pos_debt_btn"):
                         if not c_name_pos:
                             st.error("Customer name required for Debt Evidence!")
                         else:
@@ -424,7 +424,7 @@ if view_mode == "STAFF":
                 </a>
             """, unsafe_allow_html=True)
 
-            if st.button("❌ Close Receipt View"):
+            if st.button("❌ Close Receipt View", key="close_receipt_btn"):
                 st.session_state.last_receipt = None
                 st.rerun()
 
@@ -448,20 +448,20 @@ if view_mode == "STAFF":
             "category": "General"
         }
         
-        target_id = None
+        target_id = "new"
         if action == "Update Existing Item" and not df_inv.empty:
             target = st.selectbox("Select Item to Update", df_inv['name'], key="update_item_selectbox")
             selected_row = df_inv[df_inv['name'] == target]
             if not selected_row.empty:
                 curr_data = selected_row.iloc[0].to_dict()
-                target_id = int(curr_data.get('id'))
+                target_id = str(curr_data.get('id', 'new'))
 
         st.write("📷 **Product Image Input (Uploaded instantly to Cloudinary)**")
         img_tab1, img_tab2 = st.tabs(["📁 Upload Image File", "📋 Paste from Clipboard"])
         chosen_image = None
 
         with img_tab1:
-            n_file = st.file_uploader("Choose image file", type=["png", "jpg", "jpeg"], label_visibility="collapsed", key="img_file_uploader")
+            n_file = st.file_uploader("Choose image file", type=["png", "jpg", "jpeg"], label_visibility="collapsed", key=f"img_uploader_{target_id}")
             if n_file: 
                 chosen_image = n_file
 
@@ -473,7 +473,8 @@ if view_mode == "STAFF":
                     label="📋 Click here to Paste Image",
                     background_color="#1565c0",
                     hover_background_color="#0d47a1",
-                    errors="raise"
+                    errors="raise",
+                    key=f"paste_btn_{target_id}"
                 )
                 if paste_result.image_data is not None:
                     chosen_image = paste_result.image_data
@@ -483,47 +484,50 @@ if view_mode == "STAFF":
 
         st.divider()
         st.write("🎥 **Product Video File Upload (Hosted on Cloudinary)**")
-        vid_file = st.file_uploader("Upload Direct MP4 Video File", type=["mp4", "mov", "webm"], key="vid_file_uploader")
+        vid_file = st.file_uploader("Upload Direct MP4 Video File", type=["mp4", "mov", "webm"], key=f"vid_uploader_{target_id}")
 
-        with st.form("inventory_form"):
+        # DYNAMIC FORM KEYS TIED TO target_id TO PREVENT CACHING CONFLICTS
+        form_key_suffix = f"_{target_id}"
+
+        with st.form(f"inventory_form{form_key_suffix}"):
             st.info("✏️ **Category & Box Headings**: Type any category name of your choice below.")
             
             default_cat = str(curr_data.get('category', 'General') or 'General')
-            sel_category = st.text_input("Product Category", value=default_cat, key="form_category").strip().title()
+            sel_category = st.text_input("Product Category", value=default_cat, key=f"form_category{form_key_suffix}").strip().title()
 
             st.divider()
             ul1, ul2, ul3 = st.columns(3)
             with ul1:
-                custom_main_label = st.text_input("Main Unit Name (e.g. Carton)", value=str(curr_data.get('unit_main_label', 'Carton') or 'Carton'), key="form_main_label")
+                custom_main_label = st.text_input("Main Unit Name (e.g. Carton)", value=str(curr_data.get('unit_main_label', 'Carton') or 'Carton'), key=f"form_main_label{form_key_suffix}")
             with ul2:
-                custom_pack_label = st.text_input("Sub-Unit Name (e.g. Pack)", value=str(curr_data.get('unit_pack_label', 'Pack') or 'Pack'), key="form_pack_label")
+                custom_pack_label = st.text_input("Sub-Unit Name (e.g. Pack)", value=str(curr_data.get('unit_pack_label', 'Pack') or 'Pack'), key=f"form_pack_label{form_key_suffix}")
             with ul3:
-                custom_retail_label = st.text_input("Retail Name (e.g. Piece)", value=str(curr_data.get('unit_retail_label', 'Retail Unit') or 'Retail Unit'), key="form_retail_label")
+                custom_retail_label = st.text_input("Retail Name (e.g. Piece)", value=str(curr_data.get('unit_retail_label', 'Retail Unit') or 'Retail Unit'), key=f"form_retail_label{form_key_suffix}")
 
             st.divider()
 
             ca, cb, cc = st.columns(3)
             with ca:
-                n_name = st.text_input("Product Name", value=str(curr_data.get('name', '')), key="form_prod_name").strip()
-                n_cost = st.number_input(f"Cost Price (Per {custom_main_label})", value=float(curr_data.get('cost', 0.0)), key="form_cost")
-                n_shelf = st.text_input("Shelf Location", value=str(curr_data.get('shelf', '')), key="form_shelf")
+                n_name = st.text_input("Product Name", value=str(curr_data.get('name', '')), key=f"form_prod_name{form_key_suffix}").strip()
+                n_cost = st.number_input(f"Cost Price (Per {custom_main_label})", value=float(curr_data.get('cost', 0.0)), key=f"form_cost{form_key_suffix}")
+                n_shelf = st.text_input("Shelf Location", value=str(curr_data.get('shelf', '')), key=f"form_shelf{form_key_suffix}")
             with cb:
-                n_pc = st.number_input(f"Price (Per {custom_main_label})", value=float(curr_data.get('price_carton', 0.0)), key="form_price_carton")
-                n_pp = st.number_input(f"Price (Per {custom_pack_label})", value=float(curr_data.get('price_pack', 0.0)), key="form_price_pack")
-                n_pr = st.number_input(f"Price (Per {custom_retail_label})", value=float(curr_data.get('price_retail', 0.0)), key="form_price_retail")
+                n_pc = st.number_input(f"Price (Per {custom_main_label})", value=float(curr_data.get('price_carton', 0.0)), key=f"form_price_carton{form_key_suffix}")
+                n_pp = st.number_input(f"Price (Per {custom_pack_label})", value=float(curr_data.get('price_pack', 0.0)), key=f"form_price_pack{form_key_suffix}")
+                n_pr = st.number_input(f"Price (Per {custom_retail_label})", value=float(curr_data.get('price_retail', 0.0)), key=f"form_price_retail{form_key_suffix}")
             with cc:
-                n_stock = st.number_input(f"Total Stock ({custom_main_label}s)", value=float(curr_data.get('qty_cartons', 0)), key="form_qty_cartons")
-                n_ppc = st.number_input(f"Count of {custom_pack_label}s in 1 {custom_main_label}", value=int(curr_data.get('packs_per_carton', 1)), min_value=1, key="form_packs_per_carton")
-                n_upp = st.number_input(f"Count of {custom_retail_label}s in 1 {custom_pack_label}", value=int(curr_data.get('units_per_pack', 1)), min_value=1, key="form_units_per_pack")
+                n_stock = st.number_input(f"Total Stock ({custom_main_label}s)", value=float(curr_data.get('qty_cartons', 0)), key=f"form_qty_cartons{form_key_suffix}")
+                n_ppc = st.number_input(f"Count of {custom_pack_label}s in 1 {custom_main_label}", value=int(curr_data.get('packs_per_carton', 1)), min_value=1, key=f"form_packs_per_carton{form_key_suffix}")
+                n_upp = st.number_input(f"Count of {custom_retail_label}s in 1 {custom_pack_label}", value=int(curr_data.get('units_per_pack', 1)), min_value=1, key=f"form_units_per_pack{form_key_suffix}")
             
             try:
                 default_exp = datetime.strptime(str(curr_data.get('expiry')), '%Y-%m-%d').date()
             except Exception:
                 default_exp = date.today()
 
-            n_exp = st.date_input("Expiry Date", value=default_exp, key="form_expiry")
-            n_video_url = st.text_input("OR YouTube / Cloud Video Link", value=str(curr_data.get('video_url', '') or ''), key="form_video_url")
-            n_desc = st.text_area("Product Description", value=str(curr_data.get('description', '')), key="form_description")
+            n_exp = st.date_input("Expiry Date", value=default_exp, key=f"form_expiry{form_key_suffix}")
+            n_video_url = st.text_input("OR YouTube / Cloud Video Link", value=str(curr_data.get('video_url', '') or ''), key=f"form_video_url{form_key_suffix}")
+            n_desc = st.text_area("Product Description", value=str(curr_data.get('description', '')), key=f"form_description{form_key_suffix}")
             
             submitted_form = st.form_submit_button("💾 Save Product Data")
             if submitted_form:
@@ -579,8 +583,8 @@ if view_mode == "STAFF":
                     prod_payload = sanitize_payload(raw_payload)
                     
                     try:
-                        if action == "Update Existing Item" and target_id is not None:
-                            supabase.table("products").update(prod_payload).eq("id", target_id).execute()
+                        if action == "Update Existing Item" and target_id != "new":
+                            supabase.table("products").update(prod_payload).eq("id", int(target_id)).execute()
                             st.success(f"Updated '{safe_name}' successfully!")
                         else:
                             supabase.table("products").insert(prod_payload).execute()
@@ -599,7 +603,7 @@ if view_mode == "STAFF":
             with st.expander("⚠️ Click here to delete a product permanently"):
                 delete_target = st.selectbox("Select Item to PERMANENTLY Delete", df_inv['name'], key="del_box")
                 st.error(f"Warning: Deleting '{delete_target}' cannot be undone!")
-                if st.button(f"Confirm Delete: {delete_target}"):
+                if st.button(f"Confirm Delete: {delete_target}", key="confirm_del_btn"):
                     supabase.table("products").delete().eq("name", delete_target).execute()
                     st.cache_data.clear()
                     st.success(f"'{delete_target}' has been removed.")
@@ -710,7 +714,7 @@ if view_mode == "STAFF":
                     
                     st.divider()
                     with st.form("staff_reply_form", clear_on_submit=True):
-                        reply_text = st.text_input("Type your response to the customer...")
+                        reply_text = st.text_input("Type your response to the customer...", key="staff_reply_input")
                         if st.form_submit_button("📤 Send Reply"):
                             if reply_text.strip():
                                 reply_payload = {
@@ -745,23 +749,23 @@ if view_mode == "STAFF":
 
             if edit_action == "Update Amount":
                 with st.form("update_debt_form"):
-                    new_amount = st.number_input("New Balance (₦)", value=float(debt_to_edit['amount']))
+                    new_amount = st.number_input("New Balance (₦)", value=float(debt_to_edit['amount']), key="new_debt_balance")
                     if st.form_submit_button("Update Balance"):
                         supabase.table("debtors").update({"amount": float(new_amount)}).eq("id", int(selected_id)).execute()
                         st.success("Balance updated!")
                         st.rerun()
             else:
-                if st.button(f"🗑️ Confirm: Clear debt for {debt_to_edit['customer']}"):
+                if st.button(f"🗑️ Confirm: Clear debt for {debt_to_edit['customer']}", key="clear_debt_btn"):
                     supabase.table("debtors").delete().eq("id", int(selected_id)).execute()
                     st.success("Debt cleared!")
                     st.rerun()
         
         st.subheader("➕ Log New Debt")
         with st.form("debt_form"):
-            debt_c = st.text_input("Customer Name")
-            debt_p = normalize_phone(st.text_input("Phone"))
-            debt_i = st.text_area("Evidence (Items Bought)")
-            debt_a = st.number_input("Amount (₦)", 0.0)
+            debt_c = st.text_input("Customer Name", key="new_debt_cust")
+            debt_p = normalize_phone(st.text_input("Phone", key="new_debt_phone"))
+            debt_i = st.text_area("Evidence (Items Bought)", key="new_debt_items")
+            debt_a = st.number_input("Amount (₦)", 0.0, key="new_debt_amt")
             if st.form_submit_button("Log New Debt"):
                 if debt_c and debt_a > 0:
                     debt_payload = {
@@ -783,7 +787,7 @@ if view_mode == "STAFF":
             existing_notice = ""
 
         with st.form("notice_form"):
-            notice_input = st.text_area("Notice Message", value=existing_notice)
+            notice_input = st.text_area("Notice Message", value=existing_notice, key="settings_notice_input")
             if st.form_submit_button("📢 Publish Notice"):
                 chk_notice = supabase.table("app_settings").select("*").eq("key", "active_notice").execute()
                 if chk_notice.data:
@@ -801,9 +805,9 @@ if view_mode == "STAFF":
             if not df_exp_view.empty:
                 st.dataframe(df_exp_view, use_container_width=True, hide_index=True)
             with st.form("expense_entry"):
-                ex_cat = st.selectbox("Category", ["Salaries", "Rent", "Utility", "Stocking", "Fuel", "Other"])
-                ex_val = st.number_input("Amount", 0.0)
-                ex_note = st.text_input("Note")
+                ex_cat = st.selectbox("Category", ["Salaries", "Rent", "Utility", "Stocking", "Fuel", "Other"], key="exp_cat_sel")
+                ex_val = st.number_input("Amount", 0.0, key="exp_val_input")
+                ex_note = st.text_input("Note", key="exp_note_input")
                 if st.form_submit_button("Record Expense"):
                     supabase.table("expenses").insert({"category": ex_cat, "amount": float(ex_val), "note": ex_note, "date": date.today().isoformat(), "timestamp": get_now()}).execute()
                     st.rerun()
@@ -814,9 +818,9 @@ if view_mode == "STAFF":
             if not df_workers.empty:
                 st.dataframe(df_workers.drop(columns=['password'], errors='ignore'), use_container_width=True, hide_index=True)
             with st.form("worker_add"):
-                w_n = st.text_input("Worker Name")
-                w_r = st.selectbox("Role", ["Staff", "CEO"])
-                w_p = st.text_input("Password (Min 6 chars)", type="password")
+                w_n = st.text_input("Worker Name", key="worker_name_input")
+                w_r = st.selectbox("Role", ["Staff", "CEO"], key="worker_role_sel")
+                w_p = st.text_input("Password (Min 6 chars)", type="password", key="worker_pass_input")
                 if st.form_submit_button("Create Account"):
                     if len(w_p) >= 6:
                         supabase.table("workers").insert({"name": w_n, "role": w_r, "password": hash_password(w_p)}).execute()
@@ -850,21 +854,21 @@ else:
     st.markdown("### 📱 Quick Navigation (Tap below)")
     c_grid1, c_grid2 = st.columns(2)
     with c_grid1:
-        if st.button("🛒 Shop Products & Cart", use_container_width=True):
+        if st.button("🛒 Shop Products & Cart", use_container_width=True, key="nav_shop_btn"):
             st.session_state.cust_active_page = "🛒 Shop & Cart"
             st.rerun()
-        if st.button("🔍 Track Order Status", use_container_width=True):
+        if st.button("🔍 Track Order Status", use_container_width=True, key="nav_track_btn"):
             st.session_state.cust_active_page = "🔍 Track Order"
             st.rerun()
-        if st.button("💬 Support Chat", use_container_width=True):
+        if st.button("💬 Support Chat", use_container_width=True, key="nav_chat_btn"):
             st.session_state.cust_active_page = "💬 Chat with Us"
             st.rerun()
 
     with c_grid2:
-        if st.button("📝 Multi-Item Request", use_container_width=True):
+        if st.button("📝 Multi-Item Request", use_container_width=True, key="nav_req_btn"):
             st.session_state.cust_active_page = "📝 Multi-Item Special Request"
             st.rerun()
-        if st.button("📜 Transaction History & Receipts", use_container_width=True):
+        if st.button("📜 Transaction History & Receipts", use_container_width=True, key="nav_hist_btn"):
             st.session_state.cust_active_page = "📜 Transaction History"
             st.rerun()
 
@@ -889,9 +893,9 @@ else:
                 st.markdown(f"### Grand Total: ₦{cart_total:,.2f}")
                 
                 with st.form("checkout_cart_form"):
-                    c_name_cart = st.text_input("Your Full Name", value=st.session_state.active_cust_name)
-                    c_phone_cart = normalize_phone(st.text_input("Your Phone Number", value=st.session_state.active_cust_phone))
-                    c_details_cart = st.text_area("📍 Delivery Address & Order Notes")
+                    c_name_cart = st.text_input("Your Full Name", value=st.session_state.active_cust_name, key="chk_name_input")
+                    c_phone_cart = normalize_phone(st.text_input("Your Phone Number", value=st.session_state.active_cust_phone, key="chk_phone_input"))
+                    c_details_cart = st.text_area("📍 Delivery Address & Order Notes", key="chk_address_input")
                     
                     if st.form_submit_button("🚀 Submit Independent Order"):
                         if c_name_cart.strip() and c_phone_cart.strip():
@@ -995,11 +999,11 @@ else:
             with c_r2:
                 entry['qty'] = st.number_input(f"Qty", min_value=1, value=entry['qty'], key=f"req_qty_{idx}")
         
-        if st.button("➕ Add Item Row"):
+        if st.button("➕ Add Item Row", key="add_row_btn"):
             st.session_state.request_items_temp.append({"item": "", "qty": 1})
             st.rerun()
 
-        if st.button("🚀 Submit Independent Special Request", use_container_width=True):
+        if st.button("🚀 Submit Independent Special Request", use_container_width=True, key="submit_req_btn"):
             if cust_n.strip() and cust_p.strip():
                 batch_timestamp = get_now()
                 for e in st.session_state.request_items_temp:
@@ -1039,7 +1043,7 @@ else:
             for m in chat_res.data:
                 st.markdown(f"**{m['sender']}** : {m['message']}")
             with st.form("cust_msg_form", clear_on_submit=True):
-                user_msg = st.text_input("Type message...")
+                user_msg = st.text_input("Type message...", key="cust_msg_input")
                 if st.form_submit_button("Send"):
                     supabase.table("messages").insert({"sender": "Customer", "customer_phone": c_phone_chat.strip(), "message": user_msg, "timestamp": get_now()}).execute()
                     st.rerun()
