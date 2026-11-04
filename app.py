@@ -59,9 +59,9 @@ try:
 except Exception:
     pass
 
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=30)
 def fetch_dataframe_cached(table_name):
-    """Cached data fetcher to speed up product browsing and inventory."""
+    """Cached data fetcher to eliminate redundant network queries and speed up the app."""
     try:
         response = supabase.table(table_name).select("*").execute()
         if response.data and len(response.data) > 0:
@@ -71,7 +71,7 @@ def fetch_dataframe_cached(table_name):
         return pd.DataFrame()
 
 def fetch_dataframe(table_name):
-    """Standard live fetcher for real-time tables."""
+    """Standard live fetcher for transactional tables."""
     try:
         response = supabase.table(table_name).select("*").execute()
         if response.data and len(response.data) > 0:
