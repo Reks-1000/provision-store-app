@@ -59,7 +59,7 @@ except Exception:
 
 @st.cache_data(ttl=60)
 def fetch_dataframe_cached(table_name):
-    """Optimized cached data fetcher to stop egress spikes and maximize speed."""
+    """Optimized cached data fetcher to eliminate network lag and speed up loading."""
     try:
         response = supabase.table(table_name).select("*").execute()
         if response.data and len(response.data) > 0:
@@ -84,7 +84,6 @@ def fetch_dataframe(table_name):
 store_title = "Sammyreks Business Center"
 
 def upload_image_to_cloudinary(uploaded_file, folder="sammyreks_products"):
-    """Uploads and optimizes images on Cloudinary, returning a secure URL."""
     if uploaded_file is not None:
         try:
             if isinstance(uploaded_file, Image.Image):
@@ -110,7 +109,6 @@ def upload_image_to_cloudinary(uploaded_file, folder="sammyreks_products"):
     return None
 
 def upload_video_to_cloudinary(uploaded_file, folder="sammyreks_videos"):
-    """Uploads video files directly to Cloudinary, returning a secure streaming URL."""
     if uploaded_file is not None:
         try:
             file_bytes = uploaded_file.read()
@@ -178,9 +176,9 @@ st.markdown("""
             margin-bottom: 5px !important;
         }
         div[data-baseweb="tab"] {
-            font-size: 1.25rem !important;
+            font-size: 1.15rem !important;
             font-weight: bold !important;
-            padding: 12px 18px !important;
+            padding: 10px 14px !important;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -263,12 +261,19 @@ if view_mode == "STAFF":
     
     st.title(f"🏢 Dashboard: {store_title}")
 
-    # FULL RESTORED MENU INCLUDING MANAGEMENT & WORKERS TABS FOR CEO
-    menu = ["📊 Dashboard", "🛒 POS & Sales", "📦 Inventory", "📋 Orders/Requests", "💬 Customer Chats", "📓 Debtors", "⚙️ Settings"]
-    if role == "CEO":
-        menu += ["💸 Expenses", "👥 Workers"]
-    
-    tabs = st.tabs(menu)
+    # FIXED 9-TAB LAYOUT (ENSURES EXPENSES & WORKERS ICONS NEVER DISAPPEAR)
+    tab_titles = [
+        "📊 Dashboard", 
+        "💳 POS & Sales", 
+        "📦 Inventory", 
+        "📋 Orders", 
+        "💬 Chats", 
+        "📓 Debtors", 
+        "⚙️ Settings", 
+        "💸 Expenses", 
+        "👥 Workers"
+    ]
+    tabs = st.tabs(tab_titles)
 
     # TAB 0: DASHBOARD
     with tabs[0]:
@@ -773,31 +778,49 @@ if view_mode == "STAFF":
                     st.success("New debt logged to cloud.")
                     st.rerun()
 
-    # TAB 6: SETTINGS
+    # TAB 6: SETTINGS (UPDATED WITH BROADCAST VIDEO URL SETTING)
     with tabs[6]:
         st.header("⚙️ User Settings & Announcements")
-        st.subheader("📌 Notice Board Ticker")
+        st.subheader("📌 Notice Board Ticker & Broadcast Video Advert")
+        
         try:
             curr_notice_res = supabase.table("app_settings").select("value").eq("key", "active_notice").execute()
             existing_notice = curr_notice_res.data[0]['value'] if (curr_notice_res.data and len(curr_notice_res.data) > 0) else ""
         except Exception:
             existing_notice = ""
 
+        try:
+            curr_video_res = supabase.table("app_settings").select("value").eq("key", "broadcast_video_url").execute()
+            existing_video = curr_video_res.data[0]['value'] if (curr_video_res.data and len(curr_video_res.data) > 0) else ""
+        except Exception:
+            existing_video = ""
+
         with st.form("notice_form"):
-            notice_input = st.text_area("Notice Message", value=existing_notice, key="settings_notice_input")
-            if st.form_submit_button("📢 Publish Notice"):
+            notice_input = st.text_area("Notice Message (Ticker)", value=existing_notice, key="settings_notice_input")
+            broadcast_video_input = st.text_input("🎥 Broadcast Video Advert URL (Cloudinary / YouTube link)", value=existing_video, key="settings_video_input")
+            
+            if st.form_submit_button("📢 Publish Notice & Broadcast Video"):
+                # Update Notice
                 chk_notice = supabase.table("app_settings").select("*").eq("key", "active_notice").execute()
                 if chk_notice.data:
                     supabase.table("app_settings").update({"value": notice_input.strip()}).eq("key", "active_notice").execute()
                 else:
                     supabase.table("app_settings").insert({"key": "active_notice", "value": notice_input.strip()}).execute()
-                st.success("Notice updated!")
+
+                # Update Broadcast Video URL
+                chk_video = supabase.table("app_settings").select("*").eq("key", "broadcast_video_url").execute()
+                if chk_video.data:
+                    supabase.table("app_settings").update({"value": broadcast_video_input.strip()}).eq("key", "broadcast_video_url").execute()
+                else:
+                    supabase.table("app_settings").insert({"key": "broadcast_video_url", "value": broadcast_video_input.strip()}).execute()
+
+                st.success("Notice board and broadcast video updated successfully!")
                 st.rerun()
 
-    # CEO MANAGEMENT TABS (RESTORED FULLY)
-    if role == "CEO":
-        with tabs[7]:
-            st.header("💸 Expenditure Log")
+    # TAB 7: EXPENSES (CEO ONLY)
+    with tabs[7]:
+        st.header("💸 Expenditure Log")
+        if role == "CEO":
             df_exp_view = fetch_dataframe("expenses")
             if not df_exp_view.empty:
                 st.dataframe(df_exp_view, use_container_width=True, hide_index=True)
@@ -808,9 +831,13 @@ if view_mode == "STAFF":
                 if st.form_submit_button("Record Expense"):
                     supabase.table("expenses").insert({"category": ex_cat, "amount": float(ex_val), "note": ex_note, "date": date.today().isoformat(), "timestamp": get_now()}).execute()
                     st.rerun()
+        else:
+            st.warning("⚠️ Access restricted to CEO accounts only.")
 
-        with tabs[8]:
-            st.header("👥 Staff Management")
+    # TAB 8: WORKERS (CEO ONLY)
+    with tabs[8]:
+        st.header("👥 Staff Management")
+        if role == "CEO":
             df_workers = fetch_dataframe("workers")
             if not df_workers.empty:
                 st.dataframe(df_workers.drop(columns=['password'], errors='ignore'), use_container_width=True, hide_index=True)
@@ -823,11 +850,30 @@ if view_mode == "STAFF":
                         supabase.table("workers").insert({"name": w_n, "role": w_r, "password": hash_password(w_p)}).execute()
                         st.success("Worker created!")
                         st.rerun()
+        else:
+            st.warning("⚠️ Access restricted to CEO accounts only.")
 
 # ==========================================
 # 5. INDEPENDENT CUSTOMER SHOP PORTAL
 # ==========================================
 else:
+    # 1. RENDER BROADCAST VIDEO ADVERT AT THE VERY TOP IF AVAILABLE
+    try:
+        vid_res = supabase.table("app_settings").select("value").eq("key", "broadcast_video_url").execute()
+        if vid_res.data and len(vid_res.data) > 0 and vid_res.data[0].get('value'):
+            b_video_url = vid_res.data[0]['value'].strip()
+            if b_video_url and b_video_url.lower() not in ["none", "", "nan"]:
+                st.markdown("""
+                    <div style="background: linear-gradient(135deg, #0d47a1, #1565c0); padding: 10px 15px; border-radius: 10px; color: white; text-align: center; margin-bottom: 12px; font-weight: bold;">
+                        📢 FEATURED BROADCAST VIDEO ADVERT & ANNOUNCEMENT
+                    </div>
+                """, unsafe_allow_html=True)
+                st.video(b_video_url)
+                st.markdown("---")
+    except Exception:
+        pass
+
+    # 2. RENDER NOTICE TICKER
     try:
         notice_res = supabase.table("app_settings").select("value").eq("key", "active_notice").execute()
         if notice_res.data and len(notice_res.data) > 0 and notice_res.data[0].get('value'):
@@ -1062,4 +1108,4 @@ else:
                     with st.expander(f"📦 Transaction on {batch_ts} — Total: ₦{b_total:,.2f}"):
                         st.dataframe(pd.DataFrame(ord_group)[['item', 'qty', 'status', 'total_price']], use_container_width=True, hide_index=True)
 
-st.sidebar.caption(f"{store_title} v15.0 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v15.2 | {date.today().year}")
