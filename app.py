@@ -390,7 +390,6 @@ if view_mode == "STAFF":
                             st.warning(f"Debt logged for {c_name_pos}!")
                             st.rerun()
 
-        # THERMAL RECEIPT STYLE RENDERER (PAPER-GENERATED LOOK)
         if st.session_state.last_receipt:
             st.markdown("---")
             rec = st.session_state.last_receipt
@@ -633,23 +632,33 @@ if view_mode == "STAFF":
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
 
-    # TAB 3: ORDERS & PAYMENT AUTHORIZATION CENTER
+    # TAB 3: ORDERS & PAYMENT AUTHORIZATION CENTER (WITH ORDER TYPE FILTER)
     with tabs[3]:
         st.header("📋 Consolidated Customer Orders & Payment Authorization Center")
+        
+        # ORDER TYPE FILTER FOR STAFF
+        order_filter_mode = st.radio("Filter Orders By Type", ["All Orders", "🛍️ Cart Orders Only", "📝 Special Requests Only"], horizontal=True, key="staff_order_filter")
+        
         df_order_list = fetch_dataframe("orders")
         
-        st.subheader("✍️ 1. Audit & Price Special Requests")
         if not df_order_list.empty and 'item' in df_order_list.columns:
+            # Apply filter
+            if order_filter_mode == "🛍️ Cart Orders Only":
+                df_filtered_orders = df_order_list[~df_order_list['item'].str.startswith("SPECIAL:", na=False)]
+            elif order_filter_mode == "📝 Special Requests Only":
+                df_filtered_orders = df_order_list[df_order_list['item'].str.startswith("SPECIAL:", na=False)]
+            else:
+                df_filtered_orders = df_order_list
+
+            st.subheader("✍️ 1. Audit & Price Special Requests")
             df_requests = df_order_list[df_order_list['item'].str.startswith("SPECIAL:", na=False)]
             if not df_requests.empty:
-                st.info("Select a customer request below to price and set availability for EACH item individually:")
-                
                 request_batches = {}
                 for (cust, phone, ts), group in df_requests.groupby(['customer', 'contact_phone', 'timestamp']):
-                    label = f"Batch Request: {cust} ({phone}) — {len(group)} Item(s) [{ts}]"
+                    label = f"Special Request: {cust} ({phone}) — {len(group)} Item(s) [{ts}]"
                     request_batches[label] = group
 
-                selected_batch_label = st.selectbox("Select Customer Request Batch", list(request_batches.keys()), key="audit_batch_sel")
+                selected_batch_label = st.selectbox("Select Special Request Batch to Price", list(request_batches.keys()), key="audit_batch_sel")
                 selected_group = request_batches[selected_batch_label]
 
                 with st.form("multi_item_audit_form"):
@@ -692,76 +701,79 @@ if view_mode == "STAFF":
                         st.success(f"Individual prices & availability quotes sent for customer review!")
                         st.rerun()
 
-        st.divider()
-        st.subheader("🏁 2. Payment Confirmation & Final Receipt Authorization")
-        st.info("Once the customer reviews prices and confirms their order, authorize payment here to generate the final thermal receipt and log the sale.")
-        
-        df_active_orders = fetch_dataframe("orders")
-        if not df_active_orders.empty:
+            st.divider()
+            st.subheader("🏁 2. Payment Confirmation & Final Thermal Receipt Authorization")
+            
             batch_groups = {}
-            for (cust, phone, ts, date_val), group in df_active_orders.groupby(['customer', 'contact_phone', 'timestamp', 'date']):
+            for (cust, phone, ts, date_val), group in df_filtered_orders.groupby(['customer', 'contact_phone', 'timestamp', 'date']):
                 b_total = group['total_price'].sum() if 'total_price' in group.columns else 0.0
                 status_val = group['status'].iloc[0] if not group['status'].empty else "Pending"
-                label = f"[{status_val}] {cust} ({phone}) — Total: ₦{b_total:,.2f} [{ts}]"
+                is_special = any(str(i).startswith("SPECIAL:") for i in group['item'])
+                type_tag = "📝 Special Request" if is_special else "🛍️ Cart Order"
+                
+                label = f"[{type_tag}] [{status_val}] {cust} ({phone}) — Total: ₦{b_total:,.2f} [{ts}]"
                 batch_groups[label] = {"customer": cust, "phone": phone, "timestamp": ts, "group": group, "total": b_total}
 
-            selected_order_label = st.selectbox("Select Customer Order Batch to Authorize", list(batch_groups.keys()), key="auth_order_sel")
-            selected_batch_data = batch_groups[selected_order_label]
-            
-            st.dataframe(selected_batch_data['group'][['id', 'item', 'qty', 'status', 'total_price']], use_container_width=True, hide_index=True)
-            
-            col_auth1, col_auth2 = st.columns(2)
-            with col_auth1:
-                if st.button("✅ Confirm Payment & Generate Thermal Receipt", use_container_width=True, key="auth_pay_btn"):
-                    sold_items_formatted = []
-                    for idx, o in selected_batch_data['group'].iterrows():
-                        clean_item_name = str(o['item']).replace("SPECIAL:", "").strip()
-                        q = float(o['qty']) if o['qty'] > 0 else 1.0
-                        tp = float(o['total_price'])
-                        up_val = tp / q if q > 0 else tp
-                        
-                        sold_items_formatted.append({
-                            "name": clean_item_name,
-                            "unit": "Unit",
-                            "qty": int(q),
-                            "price": up_val,
-                            "total": tp
-                        })
-                        
-                        supabase.table("orders").update({"status": "Completed / Paid"}).eq("id", int(o['id'])).execute()
-                        
-                        sale_payload = {
-                            "item": clean_item_name,
-                            "unit_type": "Unit",
-                            "qty": int(q),
-                            "total": tp,
-                            "profit": tp * 0.15,
-                            "date": date.today().isoformat(),
-                            "timestamp": get_now(),
-                            "worker": user_logged,
-                            "customer_name": selected_batch_data['customer'],
-                            "customer_phone": selected_batch_data['phone']
+            if batch_groups:
+                selected_order_label = st.selectbox("Select Order Batch to Authorize", list(batch_groups.keys()), key="auth_order_sel")
+                selected_batch_data = batch_groups[selected_order_label]
+                
+                st.dataframe(selected_batch_data['group'][['id', 'item', 'qty', 'status', 'total_price']], use_container_width=True, hide_index=True)
+                
+                col_auth1, col_auth2 = st.columns(2)
+                with col_auth1:
+                    if st.button("✅ Confirm Payment & Generate Thermal Receipt", use_container_width=True, key="auth_pay_btn"):
+                        sold_items_formatted = []
+                        for idx, o in selected_batch_data['group'].iterrows():
+                            clean_item_name = str(o['item']).replace("SPECIAL:", "").strip()
+                            q = float(o['qty']) if o['qty'] > 0 else 1.0
+                            tp = float(o['total_price'])
+                            up_val = tp / q if q > 0 else tp
+                            
+                            sold_items_formatted.append({
+                                "name": clean_item_name,
+                                "unit": "Unit",
+                                "qty": int(q),
+                                "price": up_val,
+                                "total": tp
+                            })
+                            
+                            supabase.table("orders").update({"status": "Completed / Paid"}).eq("id", int(o['id'])).execute()
+                            
+                            sale_payload = {
+                                "item": clean_item_name,
+                                "unit_type": "Unit",
+                                "qty": int(q),
+                                "total": tp,
+                                "profit": tp * 0.15,
+                                "date": date.today().isoformat(),
+                                "timestamp": get_now(),
+                                "worker": user_logged,
+                                "customer_name": selected_batch_data['customer'],
+                                "customer_phone": selected_batch_data['phone']
+                            }
+                            supabase.table("sales").insert(sale_payload).execute()
+
+                        st.session_state.last_receipt = {
+                            "type": "OFFICIAL PURCHASE RECEIPT",
+                            "customer": selected_batch_data['customer'],
+                            "phone": selected_batch_data['phone'],
+                            "date": get_now(),
+                            "sold_items": sold_items_formatted,
+                            "grand_total": selected_batch_data['total'],
+                            "cashier": user_logged
                         }
-                        supabase.table("sales").insert(sale_payload).execute()
+                        st.success("Payment confirmed! Final thermal receipt generated. Scroll up to view and send via WhatsApp.")
+                        st.rerun()
 
-                    st.session_state.last_receipt = {
-                        "type": "OFFICIAL PURCHASE RECEIPT",
-                        "customer": selected_batch_data['customer'],
-                        "phone": selected_batch_data['phone'],
-                        "date": get_now(),
-                        "sold_items": sold_items_formatted,
-                        "grand_total": selected_batch_data['total'],
-                        "cashier": user_logged
-                    }
-                    st.success("Payment confirmed! Final thermal receipt generated. Scroll up to view and send via WhatsApp.")
-                    st.rerun()
-
-            with col_auth2:
-                if st.button("❌ Cancel / Reject Order (Unpaid / Delayed)", use_container_width=True, key="auth_cancel_btn"):
-                    for idx, o in selected_batch_data['group'].iterrows():
-                        supabase.table("orders").update({"status": "Cancelled - Unpaid / Delayed"}).eq("id", int(o['id'])).execute()
-                    st.warning("Order cancelled and marked as unpaid/delayed.")
-                    st.rerun()
+                with col_auth2:
+                    if st.button("❌ Cancel / Reject Order (Unpaid / Delayed)", use_container_width=True, key="auth_cancel_btn"):
+                        for idx, o in selected_batch_data['group'].iterrows():
+                            supabase.table("orders").update({"status": "Cancelled - Unpaid / Delayed"}).eq("id", int(o['id'])).execute()
+                        st.warning("Order cancelled and marked as unpaid/delayed.")
+                        st.rerun()
+            else:
+                st.info("No orders found matching the selected filter.")
 
     # TAB 4: CUSTOMER CHATS
     with tabs[4]:
@@ -1017,7 +1029,7 @@ else:
                             for item in st.session_state.cart:
                                 order_payload = {
                                     "customer": c_name_cart.strip(),
-                                    "item": f"{item['name']} ({item['unit']})",
+                                    "item": f"[Cart Order] {item['name']} ({item['unit']})",
                                     "qty": int(item['qty']),
                                     "status": "Order Placed",
                                     "contact_phone": c_phone_cart.strip(),
@@ -1180,7 +1192,6 @@ else:
                     with st.expander(f"📦 Order on {batch_ts} — Status: [{primary_status}] — Total: ₦{b_total:,.2f}"):
                         st.dataframe(pd.DataFrame(ord_group)[['item', 'qty', 'status', 'total_price']], use_container_width=True, hide_index=True)
                         
-                        # IF QUOTED, ALLOW CUSTOMER TO CONFIRM THE PRICES & SEND FINAL ORDER
                         if any("Quoted" in str(o['status']) for o in ord_group):
                             st.markdown("---")
                             st.info("💡 Prices have been set by our store! If you are satisfied with the prices, click below to confirm and send your final order to us, then proceed to make your payment.")
@@ -1193,4 +1204,4 @@ else:
             else:
                 st.info("No orders found for this phone number.")
 
-st.sidebar.caption(f"{store_title} v15.7 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v15.8 | {date.today().year}")
