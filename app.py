@@ -265,7 +265,6 @@ if view_mode == "STAFF":
     
     st.title(f"🏢 Dashboard: {store_title}")
 
-    # FIXED 9-TAB LAYOUT (ENSURES EXPENSES & WORKERS ICONS NEVER DISAPPEAR)
     tab_titles = [
         "📊 Dashboard", 
         "💳 POS & Sales", 
@@ -391,7 +390,6 @@ if view_mode == "STAFF":
                             st.warning(f"Debt logged for {c_name_pos}!")
                             st.rerun()
 
-        # STANDARDIZED PROFESSIONAL RECEIPT CARD RENDERER
         if st.session_state.last_receipt:
             st.markdown("---")
             rec = st.session_state.last_receipt
@@ -635,12 +633,12 @@ if view_mode == "STAFF":
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
 
-    # TAB 3: ORDERS & SPECIAL REQUESTS AUDIT
+    # TAB 3: ORDERS & SPECIAL REQUESTS AUDIT (STAFF PAYMENT CONFIRMATION & RECEIPT CENTER)
     with tabs[3]:
-        st.header("📋 Consolidated Customer Orders & Multi-Item Custom Requests")
+        st.header("📋 Consolidated Customer Orders & Payment Confirmation Center")
         df_order_list = fetch_dataframe("orders")
         
-        st.subheader("✍️ Audit Individual Items in Special Requests")
+        st.subheader("✍️ Audit & Price Special Requests")
         if not df_order_list.empty and 'item' in df_order_list.columns:
             df_requests = df_order_list[df_order_list['item'].str.startswith("SPECIAL:", na=False)]
             if not df_requests.empty:
@@ -685,41 +683,87 @@ if view_mode == "STAFF":
                     st.markdown("---")
                     st.markdown(f"### 🧮 **Batch Grand Total: ₦{grand_batch_total:,.2f}**")
                     
-                    if st.form_submit_button("💾 Send Individual Audited Quotes to Customer Receipt Portfolio"):
+                    if st.form_submit_button("💾 Send Price Quotes to Customer"):
                         for payload in audit_payloads:
                             supabase.table("orders").update({
                                 "total_price": payload['item_total'],
                                 "status": payload['status']
                             }).eq("id", payload['id']).execute()
-                        st.success(f"Individual prices & availability quotes updated!")
+                        st.success(f"Individual prices & availability quotes updated for customer review!")
                         st.rerun()
 
         st.divider()
-        st.subheader("📦 Bulk Order Batch Status Control")
-        df_order_list = fetch_dataframe("orders")
-        if not df_order_list.empty:
-            grouped_orders = []
-            batch_mapping = {}
+        st.subheader("🏁 Payment Confirmation & Final Receipt Authorization")
+        st.info("Review customer orders below. Once payment is confirmed by you, click **'Confirm Payment & Generate Final Receipt'**. If the customer delays or doesn't pay, click **'Cancel & Reject Order'**.")
+        
+        df_active_orders = fetch_dataframe("orders")
+        if not df_active_orders.empty:
+            batch_groups = {}
+            for (cust, phone, ts, date_val), group in df_active_orders.groupby(['customer', 'contact_phone', 'timestamp', 'date']):
+                b_total = group['total_price'].sum() if 'total_price' in group.columns else 0.0
+                status_val = group['status'].iloc[0] if not group['status'].empty else "Pending"
+                label = f"[{status_val}] {cust} ({phone}) — Total: ₦{b_total:,.2f} [{ts}]"
+                batch_groups[label] = {"customer": cust, "phone": phone, "timestamp": ts, "group": group, "total": b_total}
+
+            selected_order_label = st.selectbox("Select Customer Order Batch to Authorize", list(batch_groups.keys()), key="auth_order_sel")
+            selected_batch_data = batch_groups[selected_order_label]
             
-            for (cust, phone, ts, date_val), group in df_order_list.groupby(['customer', 'contact_phone', 'timestamp', 'date']):
-                order_ids_list = group['id'].astype(int).tolist()
-                order_ids_str = ", ".join(map(str, order_ids_list))
-                combined_items = ", ".join(group['item'].astype(str).tolist())
-                total_sum = group['total_price'].sum() if 'total_price' in group.columns else 0.0
-                primary_status = group['status'].iloc[0] if not group['status'].empty else "Pending"
-                
-                label = f"Batch [{order_ids_str}] — {cust} ({phone}) | Total: ₦{total_sum:,.2f}"
-                batch_mapping[label] = {
-                    "ids": order_ids_list, "customer": cust, "phone": phone, "timestamp": ts, "date": date_val, "group": group
-                }
-                
-                grouped_orders.append({
-                    "Order ID(s)": order_ids_str, "Customer Name": cust, "Phone Number": phone,
-                    "Ordered Items": combined_items, "Total Amount (₦)": total_sum, "Status": primary_status, "Date": date_val, "Timestamp": ts
-                })
-                
-            df_grouped = pd.DataFrame(grouped_orders)
-            st.dataframe(df_grouped.sort_values('Timestamp', ascending=False), use_container_width=True, hide_index=True)
+            st.dataframe(selected_batch_data['group'][['id', 'item', 'qty', 'status', 'total_price']], use_container_width=True, hide_index=True)
+            
+            col_auth1, col_auth2 = st.columns(2)
+            with col_auth1:
+                if st.button("✅ Confirm Payment & Generate Final Receipt", use_container_width=True, key="auth_pay_btn"):
+                    sold_items_formatted = []
+                    for idx, o in selected_batch_data['group'].iterrows():
+                        clean_item_name = str(o['item']).replace("SPECIAL:", "").strip()
+                        q = float(o['qty']) if o['qty'] > 0 else 1.0
+                        tp = float(o['total_price'])
+                        up_val = tp / q if q > 0 else tp
+                        
+                        sold_items_formatted.append({
+                            "name": clean_item_name,
+                            "unit": "Unit",
+                            "qty": int(q),
+                            "price": up_val,
+                            "total": tp
+                        })
+                        
+                        # Update order status to Completed / Paid
+                        supabase.table("orders").update({"status": "Completed / Paid"}).eq("id", int(o['id'])).execute()
+                        
+                        # Log into permanent sales table for business analytics
+                        sale_payload = {
+                            "item": clean_item_name,
+                            "unit_type": "Unit",
+                            "qty": int(q),
+                            "total": tp,
+                            "profit": tp * 0.15,
+                            "date": date.today().isoformat(),
+                            "timestamp": get_now(),
+                            "worker": user_logged,
+                            "customer_name": selected_batch_data['customer'],
+                            "customer_phone": selected_batch_data['phone']
+                        }
+                        supabase.table("sales").insert(sale_payload).execute()
+
+                    st.session_state.last_receipt = {
+                        "type": "Official Confirmed Purchase Receipt",
+                        "customer": selected_batch_data['customer'],
+                        "phone": selected_batch_data['phone'],
+                        "date": get_now(),
+                        "sold_items": sold_items_formatted,
+                        "grand_total": selected_batch_data['total'],
+                        "cashier": user_logged
+                    }
+                    st.success("Payment confirmed! Final official receipt generated. Scroll up to view and send via WhatsApp.")
+                    st.rerun()
+
+            with col_auth2:
+                if st.button("❌ Cancel / Reject Order (Unpaid / Delayed)", use_container_width=True, key="auth_cancel_btn"):
+                    for idx, o in selected_batch_data['group'].iterrows():
+                        supabase.table("orders").update({"status": "Cancelled - Unpaid / Delayed"}).eq("id", int(o['id'])).execute()
+                    st.warning("Order cancelled and marked as unpaid/delayed.")
+                    st.rerun()
 
     # TAB 4: CUSTOMER CHATS
     with tabs[4]:
@@ -1117,12 +1161,14 @@ else:
                     supabase.table("messages").insert({"sender": "Customer", "customer_phone": c_phone_chat.strip(), "message": user_msg, "timestamp": get_now()}).execute()
                     st.rerun()
 
-    # PAGE 5: TRANSACTION HISTORY
+    # PAGE 5: TRANSACTION HISTORY (CUSTOMER VIEW ONLY)
     elif st.session_state.cust_active_page == "📜 Transaction History":
-        st.subheader("📜 Customer Transaction History")
+        st.subheader("📜 Customer Order & Quoted Price History")
         history_phone = normalize_phone(st.text_input("Enter Phone Number to load history", value=st.session_state.active_cust_phone, key="hist_phone_input"))
+        
         if history_phone.strip():
             all_cust_orders = supabase.table("orders").select("*").eq("contact_phone", history_phone.strip()).order("timestamp", desc=True).execute()
+            
             if all_cust_orders.data:
                 batches = {}
                 for ord_row in all_cust_orders.data:
@@ -1131,7 +1177,12 @@ else:
                 
                 for batch_ts, ord_group in batches.items():
                     b_total = sum([o['total_price'] for o in ord_group])
-                    with st.expander(f"📦 Transaction on {batch_ts} — Total: ₦{b_total:,.2f}"):
+                    primary_status = ord_group[0]['status']
+                    
+                    with st.expander(f"📦 Order on {batch_ts} — Status: [{primary_status}] — Total: ₦{b_total:,.2f}"):
                         st.dataframe(pd.DataFrame(ord_group)[['item', 'qty', 'status', 'total_price']], use_container_width=True, hide_index=True)
+                        st.info("💡 Your order prices are displayed above. Once you complete your payment to our store, our staff will confirm and finalize your transaction receipt!")
+            else:
+                st.info("No orders found for this phone number.")
 
-st.sidebar.caption(f"{store_title} v15.4 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v15.6 | {date.today().year}")
