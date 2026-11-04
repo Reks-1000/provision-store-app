@@ -778,10 +778,10 @@ if view_mode == "STAFF":
                     st.success("New debt logged to cloud.")
                     st.rerun()
 
-    # TAB 6: SETTINGS (UPDATED WITH BROADCAST VIDEO URL SETTING)
+    # TAB 6: SETTINGS (UPDATED WITH CLOUDINARY BROADCAST VIDEO UPLOADER)
     with tabs[6]:
         st.header("⚙️ User Settings & Announcements")
-        st.subheader("📌 Notice Board Ticker & Broadcast Video Advert")
+        st.subheader("📌 Notice Board Ticker & Direct Cloudinary Broadcast Video Upload")
         
         try:
             curr_notice_res = supabase.table("app_settings").select("value").eq("key", "active_notice").execute()
@@ -795,11 +795,18 @@ if view_mode == "STAFF":
         except Exception:
             existing_video = ""
 
+        st.write("🎥 **Upload Broadcast Announcement Video (Direct to Cloudinary)**")
+        broadcast_vid_file = st.file_uploader("Choose MP4 Video File for Top Broadcast", type=["mp4", "mov", "webm"], key="broadcast_file_uploader")
+
         with st.form("notice_form"):
             notice_input = st.text_area("Notice Message (Ticker)", value=existing_notice, key="settings_notice_input")
-            broadcast_video_input = st.text_input("🎥 Broadcast Video Advert URL (Cloudinary / YouTube link)", value=existing_video, key="settings_video_input")
+            fallback_video_url = st.text_input("OR Direct Video / YouTube URL", value=existing_video, key="settings_video_input")
             
             if st.form_submit_button("📢 Publish Notice & Broadcast Video"):
+                # Upload video to Cloudinary if file selected
+                uploaded_broadcast_url = upload_video_to_cloudinary(broadcast_vid_file) if broadcast_vid_file is not None else None
+                final_broadcast_link = uploaded_broadcast_url if uploaded_broadcast_url else fallback_video_url.strip()
+
                 # Update Notice
                 chk_notice = supabase.table("app_settings").select("*").eq("key", "active_notice").execute()
                 if chk_notice.data:
@@ -810,9 +817,9 @@ if view_mode == "STAFF":
                 # Update Broadcast Video URL
                 chk_video = supabase.table("app_settings").select("*").eq("key", "broadcast_video_url").execute()
                 if chk_video.data:
-                    supabase.table("app_settings").update({"value": broadcast_video_input.strip()}).eq("key", "broadcast_video_url").execute()
+                    supabase.table("app_settings").update({"value": final_broadcast_link}).eq("key", "broadcast_video_url").execute()
                 else:
-                    supabase.table("app_settings").insert({"key": "broadcast_video_url", "value": broadcast_video_input.strip()}).execute()
+                    supabase.table("app_settings").insert({"key": "broadcast_video_url", "value": final_broadcast_link}).execute()
 
                 st.success("Notice board and broadcast video updated successfully!")
                 st.rerun()
@@ -1108,4 +1115,4 @@ else:
                     with st.expander(f"📦 Transaction on {batch_ts} — Total: ₦{b_total:,.2f}"):
                         st.dataframe(pd.DataFrame(ord_group)[['item', 'qty', 'status', 'total_price']], use_container_width=True, hide_index=True)
 
-st.sidebar.caption(f"{store_title} v15.2 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v15.3 | {date.today().year}")
