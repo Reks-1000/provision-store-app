@@ -59,9 +59,9 @@ try:
 except Exception:
     pass
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=60)
 def fetch_dataframe_cached(table_name):
-    """Cached data fetcher to eliminate redundant network queries and speed up the app."""
+    """Highly optimized cached data fetcher to stop egress spikes and speed up loading."""
     try:
         response = supabase.table(table_name).select("*").execute()
         if response.data and len(response.data) > 0:
@@ -71,7 +71,7 @@ def fetch_dataframe_cached(table_name):
         return pd.DataFrame()
 
 def fetch_dataframe(table_name):
-    """Standard live fetcher for transactional tables."""
+    """Standard live fetcher for real-time transactional tables."""
     try:
         response = supabase.table(table_name).select("*").execute()
         if response.data and len(response.data) > 0:
@@ -265,6 +265,7 @@ if view_mode == "STAFF":
     
     st.title(f"🏢 Dashboard: {store_title}")
 
+    # FULL RESTORED MENU INCLUDING MANAGEMENT & WORKERS ICONS FOR CEO
     menu = ["📊 Dashboard", "🛒 POS & Sales", "📦 Inventory", "📋 Orders/Requests", "💬 Customer Chats", "📓 Debtors", "⚙️ Settings"]
     if role == "CEO":
         menu += ["💸 Expenses", "👥 Workers"]
@@ -795,7 +796,7 @@ if view_mode == "STAFF":
                 st.success("Notice updated!")
                 st.rerun()
 
-    # CEO TABS
+    # CEO MANAGEMENT TABS (RESTORED FULLY)
     if role == "CEO":
         with tabs[7]:
             st.header("💸 Expenditure Log")
