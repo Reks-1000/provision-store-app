@@ -130,15 +130,15 @@ def generate_whatsapp_link(phone, receipt_type, customer_name, items_list, grand
     
     message = (
         f"🏢 *{store_title}*\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"----------------------------------------\n"
         f"*{receipt_type}*\n"
-        f"━━━━━━━━━━━━━━━━━━━\n\n"
+        f"----------------------------------------\n\n"
         f"👤 *Customer:* {customer_name}\n"
         f"📞 *Phone:* {phone}\n\n"
         f"🛒 *Purchased Items:*\n{items_text}\n\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"----------------------------------------\n"
         f"💰 *Grand Total: ₦{grand_total:,.2f}*\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"----------------------------------------\n"
         f"Thank you for your patronage!"
     )
     
@@ -359,7 +359,7 @@ if view_mode == "STAFF":
                             "grand_total": grand_total, 
                             "cashier": user_logged
                         }
-                        st.success("Sale Recorded & Standard Receipt Generated!")
+                        st.success("Sale Recorded & Thermal Receipt Generated!")
                         st.rerun()
                 
                 with col_btn2:
@@ -390,62 +390,62 @@ if view_mode == "STAFF":
                             st.warning(f"Debt logged for {c_name_pos}!")
                             st.rerun()
 
+        # THERMAL RECEIPT STYLE RENDERER (PAPER-GENERATED LOOK)
         if st.session_state.last_receipt:
             st.markdown("---")
             rec = st.session_state.last_receipt
-            rec_type = rec.get('type', 'Official Sales & Delivery Receipt')
+            rec_type = rec.get('type', 'OFFICIAL SALES RECEIPT')
             sold_items_list = rec.get('sold_items', rec.get('items', []))
             cust_name_rc = rec.get('customer', 'Walk-in Customer')
             cust_phone_rc = rec.get('phone', 'N/A')
             g_total_rc = rec.get('grand_total', 0.0)
 
-            rows_html = "".join([
-                f"<tr style='border-bottom:1px solid #eeeeee;'><td style='padding:12px 8px; color:#333;'><b>{itm.get('name','Item')}</b><br><span style='font-size:0.8rem; color:#666;'>Unit: {itm.get('unit','Unit')}</span></td><td style='padding:12px 8px; text-align:center; color:#333;'>{itm.get('qty',1)}</td><td style='padding:12px 8px; text-align:right; color:#333;'>₦{itm.get('price',0.0):,.2f}</td><td style='padding:12px 8px; text-align:right; font-weight:bold; color:#1565c0;'>₦{itm.get('total',0.0):,.2f}</td></tr>"
+            receipt_rows_html = "".join([
+                f"<tr><td style='padding:6px 0; font-size:0.9rem;'><b>{itm.get('name','Item')}</b><br><span style='font-size:0.75rem; color:#555;'>{itm.get('qty',1)} x ₦{itm.get('price',0.0):,.2f} ({itm.get('unit','Unit')})</span></td><td style='padding:6px 0; text-align:right; font-size:0.9rem; vertical-align:top; font-weight:bold;'>₦{itm.get('total',0.0):,.2f}</td></tr>"
                 for itm in sold_items_list
             ])
 
-            html_code = f"""
-            <div style="background:#ffffff; color:#111; padding:30px; border-radius:14px; border:2px solid #1565c0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; max-width:650px; margin:auto; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
-                <div style="text-align:center; border-bottom:2px solid #1565c0; padding-bottom:15px; margin-bottom:20px;">
-                    <h2 style="margin:0; color:#1565c0; font-size:1.8rem; letter-spacing:0.5px;">🏢 {store_title}</h2>
-                    <p style="margin:4px 0 0 0; color:#555; font-size:0.95rem; font-weight:600; text-transform:uppercase; letter-spacing:1px;">{rec_type}</p>
+            thermal_html = f"""
+            <div style="background:#fdfcf7; color:#111; padding:25px; border-radius:4px; border:1px solid #dcd6cd; font-family:'Courier New', Courier, monospace; max-width:420px; margin:auto; box-shadow: 0 6px 18px rgba(0,0,0,0.12);">
+                <div style="text-align:center; border-bottom:1px dashed #333; padding-bottom:12px; margin-bottom:12px;">
+                    <h3 style="margin:0; font-size:1.3rem; letter-spacing:1px;">{store_title.upper()}</h3>
+                    <p style="margin:2px 0; font-size:0.75rem; color:#444;">WHOLESALE & RETAIL DISTRIBUTION</p>
+                    <p style="margin:6px 0 0 0; font-size:0.85rem; font-weight:bold; background:#222; color:#fff; display:inline-block; padding:2px 8px; border-radius:3px;">{rec_type}</p>
                 </div>
-                <div style="display:flex; justify-content:space-between; font-size:0.95rem; background:#f8f9fa; padding:12px 15px; border-radius:8px; margin-bottom:20px;">
-                    <div>
-                        <p style="margin:2px 0;"><b>Customer:</b> {cust_name_rc}</p>
-                        <p style="margin:2px 0;"><b>Phone:</b> {cust_phone_rc}</p>
-                    </div>
-                    <div style="text-align:right;">
-                        <p style="margin:2px 0;"><b>Date:</b> {rec.get('date','')}</p>
-                        <p style="margin:2px 0;"><b>Cashier:</b> {rec.get('cashier','Staff')}</p>
-                    </div>
+                <div style="font-size:0.8rem; margin-bottom:12px; border-bottom:1px dashed #333; padding-bottom:8px;">
+                    <p style="margin:2px 0;"><b>DATE:</b> {rec.get('date','')}</p>
+                    <p style="margin:2px 0;"><b>CUSTOMER:</b> {cust_name_rc}</p>
+                    <p style="margin:2px 0;"><b>PHONE:</b> {cust_phone_rc}</p>
+                    <p style="margin:2px 0;"><b>CASHIER:</b> {rec.get('cashier','Staff')}</p>
                 </div>
-                <table style="width:100%; border-collapse:collapse; font-size:0.95rem; margin-bottom:20px;">
+                <table style="width:100%; border-collapse:collapse; margin-bottom:15px;">
                     <thead>
-                        <tr style="background:#1565c0; color:white;">
-                            <th style="padding:10px; text-align:left; border-top-left-radius:6px;">Item Description</th>
-                            <th style="padding:10px; text-align:center;">Qty</th>
-                            <th style="padding:10px; text-align:right;">Unit Price</th>
-                            <th style="padding:10px; text-align:right; border-top-right-radius:6px;">Amount</th>
+                        <tr style="border-bottom:1px solid #333; font-size:0.8rem;">
+                            <th style="text-align:left; padding-bottom:4px;">ITEM / DESC</th>
+                            <th style="text-align:right; padding-bottom:4px;">TOTAL</th>
                         </tr>
                     </thead>
-                    <tbody>{rows_html}</tbody>
+                    <tbody>{receipt_rows_html}</tbody>
                 </table>
-                <div style="border-top:2px solid #1565c0; padding-top:15px; text-align:right;">
-                    <h3 style="margin:0; color:#1565c0; font-size:1.4rem;">Grand Total: ₦{g_total_rc:,.2f}</h3>
+                <div style="border-top:1px dashed #333; border-bottom:1px dashed #333; padding:10px 0; margin-bottom:15px;">
+                    <div style="display:flex; justify-content:space-between; font-size:1.1rem; font-weight:bold;">
+                        <span>GRAND TOTAL:</span>
+                        <span>₦{g_total_rc:,.2f}</span>
+                    </div>
                 </div>
-                <div style="text-align:center; margin-top:25px; font-size:0.85rem; color:#777; border-top:1px dashed #ddd; padding-top:12px;">
-                    <p style="margin:0;">Thank you for your patronage! Goods bought in good condition are not returnable.</p>
+                <div style="text-align:center; font-size:0.75rem; color:#555;">
+                    <p style="margin:2px 0;">*** THANK YOU FOR YOUR PATRONAGE ***</p>
+                    <p style="margin:2px 0;">Goods sold in good condition are non-refundable.</p>
                 </div>
             </div>
             """
-            components.html(html_code, height=440 + (len(sold_items_list) * 55), scrolling=True)
+            components.html(thermal_html, height=420 + (len(sold_items_list) * 55), scrolling=True)
 
             wa_url = generate_whatsapp_link(cust_phone_rc, rec_type, cust_name_rc, sold_items_list, g_total_rc)
             st.markdown(f"""
                 <a href="{wa_url}" target="_blank">
-                    <button style="width:100%; background-color:#25d366; color:white; padding:14px; border:none; border-radius:10px; font-size:1.15rem; font-weight:bold; cursor:pointer; margin-top:15px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);">
-                        💬 Send Standard Receipt via WhatsApp
+                    <button style="width:100%; background-color:#25d366; color:white; padding:14px; border:none; border-radius:8px; font-size:1.1rem; font-weight:bold; cursor:pointer; margin-top:15px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);">
+                        💬 Send Thermal Receipt via WhatsApp
                     </button>
                 </a>
             """, unsafe_allow_html=True)
@@ -633,12 +633,12 @@ if view_mode == "STAFF":
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
 
-    # TAB 3: ORDERS & SPECIAL REQUESTS AUDIT (STAFF PAYMENT CONFIRMATION & RECEIPT CENTER)
+    # TAB 3: ORDERS & PAYMENT AUTHORIZATION CENTER
     with tabs[3]:
-        st.header("📋 Consolidated Customer Orders & Payment Confirmation Center")
+        st.header("📋 Consolidated Customer Orders & Payment Authorization Center")
         df_order_list = fetch_dataframe("orders")
         
-        st.subheader("✍️ Audit & Price Special Requests")
+        st.subheader("✍️ 1. Audit & Price Special Requests")
         if not df_order_list.empty and 'item' in df_order_list.columns:
             df_requests = df_order_list[df_order_list['item'].str.startswith("SPECIAL:", na=False)]
             if not df_requests.empty:
@@ -689,12 +689,12 @@ if view_mode == "STAFF":
                                 "total_price": payload['item_total'],
                                 "status": payload['status']
                             }).eq("id", payload['id']).execute()
-                        st.success(f"Individual prices & availability quotes updated for customer review!")
+                        st.success(f"Individual prices & availability quotes sent for customer review!")
                         st.rerun()
 
         st.divider()
-        st.subheader("🏁 Payment Confirmation & Final Receipt Authorization")
-        st.info("Review customer orders below. Once payment is confirmed by you, click **'Confirm Payment & Generate Final Receipt'**. If the customer delays or doesn't pay, click **'Cancel & Reject Order'**.")
+        st.subheader("🏁 2. Payment Confirmation & Final Receipt Authorization")
+        st.info("Once the customer reviews prices and confirms their order, authorize payment here to generate the final thermal receipt and log the sale.")
         
         df_active_orders = fetch_dataframe("orders")
         if not df_active_orders.empty:
@@ -712,7 +712,7 @@ if view_mode == "STAFF":
             
             col_auth1, col_auth2 = st.columns(2)
             with col_auth1:
-                if st.button("✅ Confirm Payment & Generate Final Receipt", use_container_width=True, key="auth_pay_btn"):
+                if st.button("✅ Confirm Payment & Generate Thermal Receipt", use_container_width=True, key="auth_pay_btn"):
                     sold_items_formatted = []
                     for idx, o in selected_batch_data['group'].iterrows():
                         clean_item_name = str(o['item']).replace("SPECIAL:", "").strip()
@@ -728,10 +728,8 @@ if view_mode == "STAFF":
                             "total": tp
                         })
                         
-                        # Update order status to Completed / Paid
                         supabase.table("orders").update({"status": "Completed / Paid"}).eq("id", int(o['id'])).execute()
                         
-                        # Log into permanent sales table for business analytics
                         sale_payload = {
                             "item": clean_item_name,
                             "unit_type": "Unit",
@@ -747,7 +745,7 @@ if view_mode == "STAFF":
                         supabase.table("sales").insert(sale_payload).execute()
 
                     st.session_state.last_receipt = {
-                        "type": "Official Confirmed Purchase Receipt",
+                        "type": "OFFICIAL PURCHASE RECEIPT",
                         "customer": selected_batch_data['customer'],
                         "phone": selected_batch_data['phone'],
                         "date": get_now(),
@@ -755,7 +753,7 @@ if view_mode == "STAFF":
                         "grand_total": selected_batch_data['total'],
                         "cashier": user_logged
                     }
-                    st.success("Payment confirmed! Final official receipt generated. Scroll up to view and send via WhatsApp.")
+                    st.success("Payment confirmed! Final thermal receipt generated. Scroll up to view and send via WhatsApp.")
                     st.rerun()
 
             with col_auth2:
@@ -1161,7 +1159,7 @@ else:
                     supabase.table("messages").insert({"sender": "Customer", "customer_phone": c_phone_chat.strip(), "message": user_msg, "timestamp": get_now()}).execute()
                     st.rerun()
 
-    # PAGE 5: TRANSACTION HISTORY (CUSTOMER VIEW ONLY)
+    # PAGE 5: TRANSACTION HISTORY & CUSTOMER QUOTE CONFIRMATION
     elif st.session_state.cust_active_page == "📜 Transaction History":
         st.subheader("📜 Customer Order & Quoted Price History")
         history_phone = normalize_phone(st.text_input("Enter Phone Number to load history", value=st.session_state.active_cust_phone, key="hist_phone_input"))
@@ -1181,8 +1179,18 @@ else:
                     
                     with st.expander(f"📦 Order on {batch_ts} — Status: [{primary_status}] — Total: ₦{b_total:,.2f}"):
                         st.dataframe(pd.DataFrame(ord_group)[['item', 'qty', 'status', 'total_price']], use_container_width=True, hide_index=True)
-                        st.info("💡 Your order prices are displayed above. Once you complete your payment to our store, our staff will confirm and finalize your transaction receipt!")
+                        
+                        # IF QUOTED, ALLOW CUSTOMER TO CONFIRM THE PRICES & SEND FINAL ORDER
+                        if any("Quoted" in str(o['status']) for o in ord_group):
+                            st.markdown("---")
+                            st.info("💡 Prices have been set by our store! If you are satisfied with the prices, click below to confirm and send your final order to us, then proceed to make your payment.")
+                            
+                            if st.button(f"✅ Confirm Prices & Send Final Order [{batch_ts}]", key=f"cust_confirm_btn_{batch_ts}"):
+                                for o in ord_group:
+                                    supabase.table("orders").update({"status": "Confirmed by Customer - Pending Payment"}).eq("id", int(o['id'])).execute()
+                                st.success("✅ Final order sent to store! Please make your payment so staff can finalize and send your receipt.")
+                                st.rerun()
             else:
                 st.info("No orders found for this phone number.")
 
-st.sidebar.caption(f"{store_title} v15.6 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v15.7 | {date.today().year}")
