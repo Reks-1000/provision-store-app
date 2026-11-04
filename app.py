@@ -3,13 +3,11 @@ import streamlit.components.v1 as components
 import pandas as pd
 from supabase import create_client, Client
 from datetime import datetime, date
-import base64
 from io import BytesIO
 from PIL import Image
 import math
 import hashlib
 import urllib.parse
-import time
 import cloudinary
 import cloudinary.uploader
 
@@ -61,7 +59,7 @@ except Exception:
 
 @st.cache_data(ttl=60)
 def fetch_dataframe_cached(table_name):
-    """Highly optimized cached data fetcher to stop egress spikes and speed up loading."""
+    """Optimized cached data fetcher to stop egress spikes and maximize speed."""
     try:
         response = supabase.table(table_name).select("*").execute()
         if response.data and len(response.data) > 0:
@@ -265,7 +263,7 @@ if view_mode == "STAFF":
     
     st.title(f"🏢 Dashboard: {store_title}")
 
-    # FULL RESTORED MENU INCLUDING MANAGEMENT & WORKERS ICONS FOR CEO
+    # FULL RESTORED MENU INCLUDING MANAGEMENT & WORKERS TABS FOR CEO
     menu = ["📊 Dashboard", "🛒 POS & Sales", "📦 Inventory", "📋 Orders/Requests", "💬 Customer Chats", "📓 Debtors", "⚙️ Settings"]
     if role == "CEO":
         menu += ["💸 Expenses", "👥 Workers"]
