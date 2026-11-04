@@ -126,15 +126,19 @@ def upload_video_to_cloudinary(uploaded_file, folder="sammyreks_videos"):
 
 def generate_whatsapp_link(phone, receipt_type, customer_name, items_list, grand_total):
     clean_phone = "".join(c for c in phone if c.isdigit())
-    items_text = "\n".join([f"- {i.get('name', 'Item')} ({i.get('unit', 'Unit')}) x{i.get('qty', 1)} @ ₦{i.get('price', 0):,.2f} = ₦{i.get('total', 0):,.2f}" for i in items_list])
+    items_text = "\n".join([f"• {i.get('name', 'Item')} ({i.get('unit', 'Unit')}) x{i.get('qty', 1)} @ ₦{i.get('price', 0):,.2f} = ₦{i.get('total', 0):,.2f}" for i in items_list])
     
     message = (
         f"🏢 *{store_title}*\n"
-        f"*{receipt_type}*\n\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"*{receipt_type}*\n"
+        f"━━━━━━━━━━━━━━━━━━━\n\n"
         f"👤 *Customer:* {customer_name}\n"
         f"📞 *Phone:* {phone}\n\n"
-        f"🛒 *Items:* \n{items_text}\n\n"
-        f"💰 *Grand Total: ₦{grand_total:,.2f}*\n\n"
+        f"🛒 *Purchased Items:*\n{items_text}\n\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"💰 *Grand Total: ₦{grand_total:,.2f}*\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
         f"Thank you for your patronage!"
     )
     
@@ -348,7 +352,7 @@ if view_mode == "STAFF":
                         st.cache_data.clear()
                             
                         st.session_state.last_receipt = {
-                            "type": "Successful Delivery Receipt", 
+                            "type": "Official Sales & Delivery Receipt", 
                             "customer": c_name_pos or "Walk-in Customer",
                             "phone": c_phone_pos or "N/A", 
                             "date": get_now(),
@@ -356,7 +360,7 @@ if view_mode == "STAFF":
                             "grand_total": grand_total, 
                             "cashier": user_logged
                         }
-                        st.success("Sale Recorded & Delivery Receipt Generated!")
+                        st.success("Sale Recorded & Standard Receipt Generated!")
                         st.rerun()
                 
                 with col_btn2:
@@ -387,43 +391,63 @@ if view_mode == "STAFF":
                             st.warning(f"Debt logged for {c_name_pos}!")
                             st.rerun()
 
+        # STANDARDIZED PROFESSIONAL RECEIPT CARD RENDERER
         if st.session_state.last_receipt:
             st.markdown("---")
             rec = st.session_state.last_receipt
-            rec_type = rec.get('type', 'Official Receipt')
+            rec_type = rec.get('type', 'Official Sales & Delivery Receipt')
             sold_items_list = rec.get('sold_items', rec.get('items', []))
             cust_name_rc = rec.get('customer', 'Walk-in Customer')
             cust_phone_rc = rec.get('phone', 'N/A')
             g_total_rc = rec.get('grand_total', 0.0)
 
             rows_html = "".join([
-                f"<tr style='border-bottom:1px solid #e0e0e0;'><td style='padding:10px;'>{itm.get('name','Item')} ({itm.get('unit','Unit')})</td><td style='padding:10px;text-align:center;'>{itm.get('qty',1)}</td><td style='padding:10px;text-align:right;'>₦{itm.get('price',0.0):,.2f}</td><td style='padding:10px;text-align:right;font-weight:bold;'>₦{itm.get('total',0.0):,.2f}</td></tr>"
+                f"<tr style='border-bottom:1px solid #eeeeee;'><td style='padding:12px 8px; color:#333;'><b>{itm.get('name','Item')}</b><br><span style='font-size:0.8rem; color:#666;'>Unit: {itm.get('unit','Unit')}</span></td><td style='padding:12px 8px; text-align:center; color:#333;'>{itm.get('qty',1)}</td><td style='padding:12px 8px; text-align:right; color:#333;'>₦{itm.get('price',0.0):,.2f}</td><td style='padding:12px 8px; text-align:right; font-weight:bold; color:#1565c0;'>₦{itm.get('total',0.0):,.2f}</td></tr>"
                 for itm in sold_items_list
             ])
 
             html_code = f"""
-            <div style="background:#ffffff;color:#111;padding:24px;border-radius:12px;border:2.5px solid #1565c0;font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:620px;margin:auto;">
-                <div style="text-align:center;"><h2 style="margin:0;color:#1565c0;">🏢 {store_title}</h2><p style="margin:4px 0;color:#555;font-weight:600;">{rec_type}</p></div>
-                <hr style="border:none;border-top:1px solid #ddd;margin:15px 0;">
-                <p style="margin:4px 0;"><b>Customer Name:</b> {cust_name_rc}</p>
-                <p style="margin:4px 0;"><b>Phone Number:</b> {cust_phone_rc}</p>
-                <p style="margin:4px 0;"><b>Date/Time:</b> {rec.get('date','')} | <b>Staff:</b> {rec.get('cashier','Staff')}</p>
-                <hr style="border:none;border-top:1px solid #ddd;margin:15px 0;">
-                <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
-                    <thead><tr style="background:#f5f7fa;border-bottom:2px solid #ddd;"><th style="padding:10px;text-align:left;">Item</th><th style="padding:10px;text-align:center;">Qty</th><th style="padding:10px;text-align:right;">Price</th><th style="padding:10px;text-align:right;">Total</th></tr></thead>
+            <div style="background:#ffffff; color:#111; padding:30px; border-radius:14px; border:2px solid #1565c0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; max-width:650px; margin:auto; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
+                <div style="text-align:center; border-bottom:2px solid #1565c0; padding-bottom:15px; margin-bottom:20px;">
+                    <h2 style="margin:0; color:#1565c0; font-size:1.8rem; letter-spacing:0.5px;">🏢 {store_title}</h2>
+                    <p style="margin:4px 0 0 0; color:#555; font-size:0.95rem; font-weight:600; text-transform:uppercase; letter-spacing:1px;">{rec_type}</p>
+                </div>
+                <div style="display:flex; justify-content:space-between; font-size:0.95rem; background:#f8f9fa; padding:12px 15px; border-radius:8px; margin-bottom:20px;">
+                    <div>
+                        <p style="margin:2px 0;"><b>Customer:</b> {cust_name_rc}</p>
+                        <p style="margin:2px 0;"><b>Phone:</b> {cust_phone_rc}</p>
+                    </div>
+                    <div style="text-align:right;">
+                        <p style="margin:2px 0;"><b>Date:</b> {rec.get('date','')}</p>
+                        <p style="margin:2px 0;"><b>Cashier:</b> {rec.get('cashier','Staff')}</p>
+                    </div>
+                </div>
+                <table style="width:100%; border-collapse:collapse; font-size:0.95rem; margin-bottom:20px;">
+                    <thead>
+                        <tr style="background:#1565c0; color:white;">
+                            <th style="padding:10px; text-align:left; border-top-left-radius:6px;">Item Description</th>
+                            <th style="padding:10px; text-align:center;">Qty</th>
+                            <th style="padding:10px; text-align:right;">Unit Price</th>
+                            <th style="padding:10px; text-align:right; border-top-right-radius:6px;">Amount</th>
+                        </tr>
+                    </thead>
                     <tbody>{rows_html}</tbody>
                 </table>
-                <hr style="border:none;border-top:1px solid #ddd;margin:15px 0;">
-                <h3 style="text-align:right;color:#1565c0;margin:10px 0;">Grand Total: ₦{g_total_rc:,.2f}</h3>
+                <div style="border-top:2px solid #1565c0; padding-top:15px; text-align:right;">
+                    <h3 style="margin:0; color:#1565c0; font-size:1.4rem;">Grand Total: ₦{g_total_rc:,.2f}</h3>
+                </div>
+                <div style="text-align:center; margin-top:25px; font-size:0.85rem; color:#777; border-top:1px dashed #ddd; padding-top:12px;">
+                    <p style="margin:0;">Thank you for your patronage! Goods bought in good condition are not returnable.</p>
+                </div>
             </div>
             """
-            components.html(html_code, height=360 + (len(sold_items_list) * 45), scrolling=True)
+            components.html(html_code, height=440 + (len(sold_items_list) * 55), scrolling=True)
 
             wa_url = generate_whatsapp_link(cust_phone_rc, rec_type, cust_name_rc, sold_items_list, g_total_rc)
             st.markdown(f"""
                 <a href="{wa_url}" target="_blank">
-                    <button style="width:100%; background-color:#25d366; color:white; padding:12px; border:none; border-radius:8px; font-size:1.1rem; font-weight:bold; cursor:pointer; margin-top:10px;">
-                        💬 Send Receipt via WhatsApp
+                    <button style="width:100%; background-color:#25d366; color:white; padding:14px; border:none; border-radius:10px; font-size:1.15rem; font-weight:bold; cursor:pointer; margin-top:15px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);">
+                        💬 Send Standard Receipt via WhatsApp
                     </button>
                 </a>
             """, unsafe_allow_html=True)
@@ -778,7 +802,7 @@ if view_mode == "STAFF":
                     st.success("New debt logged to cloud.")
                     st.rerun()
 
-    # TAB 6: SETTINGS (UPDATED WITH CLOUDINARY BROADCAST VIDEO UPLOADER)
+    # TAB 6: SETTINGS
     with tabs[6]:
         st.header("⚙️ User Settings & Announcements")
         st.subheader("📌 Notice Board Ticker & Direct Cloudinary Broadcast Video Upload")
@@ -803,18 +827,15 @@ if view_mode == "STAFF":
             fallback_video_url = st.text_input("OR Direct Video / YouTube URL", value=existing_video, key="settings_video_input")
             
             if st.form_submit_button("📢 Publish Notice & Broadcast Video"):
-                # Upload video to Cloudinary if file selected
                 uploaded_broadcast_url = upload_video_to_cloudinary(broadcast_vid_file) if broadcast_vid_file is not None else None
                 final_broadcast_link = uploaded_broadcast_url if uploaded_broadcast_url else fallback_video_url.strip()
 
-                # Update Notice
                 chk_notice = supabase.table("app_settings").select("*").eq("key", "active_notice").execute()
                 if chk_notice.data:
                     supabase.table("app_settings").update({"value": notice_input.strip()}).eq("key", "active_notice").execute()
                 else:
                     supabase.table("app_settings").insert({"key": "active_notice", "value": notice_input.strip()}).execute()
 
-                # Update Broadcast Video URL
                 chk_video = supabase.table("app_settings").select("*").eq("key", "broadcast_video_url").execute()
                 if chk_video.data:
                     supabase.table("app_settings").update({"value": final_broadcast_link}).eq("key", "broadcast_video_url").execute()
@@ -864,7 +885,6 @@ if view_mode == "STAFF":
 # 5. INDEPENDENT CUSTOMER SHOP PORTAL
 # ==========================================
 else:
-    # 1. RENDER BROADCAST VIDEO ADVERT AT THE VERY TOP IF AVAILABLE
     try:
         vid_res = supabase.table("app_settings").select("value").eq("key", "broadcast_video_url").execute()
         if vid_res.data and len(vid_res.data) > 0 and vid_res.data[0].get('value'):
@@ -880,7 +900,6 @@ else:
     except Exception:
         pass
 
-    # 2. RENDER NOTICE TICKER
     try:
         notice_res = supabase.table("app_settings").select("value").eq("key", "active_notice").execute()
         if notice_res.data and len(notice_res.data) > 0 and notice_res.data[0].get('value'):
@@ -1115,4 +1134,4 @@ else:
                     with st.expander(f"📦 Transaction on {batch_ts} — Total: ₦{b_total:,.2f}"):
                         st.dataframe(pd.DataFrame(ord_group)[['item', 'qty', 'status', 'total_price']], use_container_width=True, hide_index=True)
 
-st.sidebar.caption(f"{store_title} v15.3 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v15.4 | {date.today().year}")
