@@ -59,7 +59,6 @@ except Exception:
 
 @st.cache_data(ttl=60)
 def fetch_dataframe_cached(table_name):
-    """Optimized cached data fetcher to eliminate network lag and speed up loading."""
     try:
         response = supabase.table(table_name).select("*").execute()
         if response.data and len(response.data) > 0:
@@ -69,7 +68,6 @@ def fetch_dataframe_cached(table_name):
         return pd.DataFrame()
 
 def fetch_dataframe(table_name):
-    """Standard live fetcher for real-time transactional tables."""
     try:
         response = supabase.table(table_name).select("*").execute()
         if response.data and len(response.data) > 0:
@@ -255,6 +253,44 @@ else:
         st.session_state.auth = {"logged_in": False, "user": None, "role": None}
         st.rerun()
     view_mode = "STAFF"
+
+# ==========================================
+# TOP WELCOME BANNER & NOTICE BOARD (RENDERED AT THE TOP)
+# ==========================================
+try:
+    vid_res = supabase.table("app_settings").select("value").eq("key", "broadcast_video_url").execute()
+    if vid_res.data and len(vid_res.data) > 0 and vid_res.data[0].get('value'):
+        b_video_url = vid_res.data[0]['value'].strip()
+        if b_video_url and b_video_url.lower() not in ["none", "", "nan"]:
+            st.markdown("""
+                <div style="background: linear-gradient(135deg, #0d47a1, #1565c0); padding: 10px 15px; border-radius: 10px; color: white; text-align: center; margin-bottom: 12px; font-weight: bold;">
+                    📢 FEATURED BROADCAST VIDEO ADVERT & ANNOUNCEMENT
+                </div>
+            """, unsafe_allow_html=True)
+            st.video(b_video_url)
+            st.markdown("---")
+except Exception:
+    pass
+
+try:
+    notice_res = supabase.table("app_settings").select("value").eq("key", "active_notice").execute()
+    if notice_res.data and len(notice_res.data) > 0 and notice_res.data[0].get('value'):
+        notice_text = notice_res.data[0]['value'].strip()
+        if notice_text:
+            st.markdown(f"""
+                <div style="background: #1565c0; padding: 14px 20px; border-radius: 10px; color: #ffffff; font-weight: bold; text-align: center; margin-bottom: 15px; font-size: 1.1rem;">
+                    📢 {notice_text}
+                </div>
+            """, unsafe_allow_html=True)
+except Exception:
+    pass
+
+st.markdown(f"""
+    <div style="background: linear-gradient(135deg, #1565c0, #0d47a1); padding: 22px; border-radius: 14px; color: white; text-align: center; margin-bottom: 20px;">
+        <h1 style="margin: 0; font-size: 2.1rem;">🏢 Welcome to {store_title}</h1>
+        <p style="margin: 6px 0 0 0; font-size: 1.05rem;">Your trusted plug for quality provisions, groceries, and goods!</p>
+    </div>
+""", unsafe_allow_html=True)
 
 # ==========================================
 # 4. STAFF & CEO DASHBOARD
@@ -632,17 +668,15 @@ if view_mode == "STAFF":
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
 
-    # TAB 3: ORDERS & PAYMENT AUTHORIZATION CENTER (WITH ORDER TYPE FILTER)
+    # TAB 3: ORDERS & PAYMENT AUTHORIZATION CENTER
     with tabs[3]:
         st.header("📋 Consolidated Customer Orders & Payment Authorization Center")
         
-        # ORDER TYPE FILTER FOR STAFF
         order_filter_mode = st.radio("Filter Orders By Type", ["All Orders", "🛍️ Cart Orders Only", "📝 Special Requests Only"], horizontal=True, key="staff_order_filter")
         
         df_order_list = fetch_dataframe("orders")
         
         if not df_order_list.empty and 'item' in df_order_list.columns:
-            # Apply filter
             if order_filter_mode == "🛍️ Cart Orders Only":
                 df_filtered_orders = df_order_list[~df_order_list['item'].str.startswith("SPECIAL:", na=False)]
             elif order_filter_mode == "📝 Special Requests Only":
@@ -939,41 +973,6 @@ if view_mode == "STAFF":
 # 5. INDEPENDENT CUSTOMER SHOP PORTAL
 # ==========================================
 else:
-    try:
-        vid_res = supabase.table("app_settings").select("value").eq("key", "broadcast_video_url").execute()
-        if vid_res.data and len(vid_res.data) > 0 and vid_res.data[0].get('value'):
-            b_video_url = vid_res.data[0]['value'].strip()
-            if b_video_url and b_video_url.lower() not in ["none", "", "nan"]:
-                st.markdown("""
-                    <div style="background: linear-gradient(135deg, #0d47a1, #1565c0); padding: 10px 15px; border-radius: 10px; color: white; text-align: center; margin-bottom: 12px; font-weight: bold;">
-                        📢 FEATURED BROADCAST VIDEO ADVERT & ANNOUNCEMENT
-                    </div>
-                """, unsafe_allow_html=True)
-                st.video(b_video_url)
-                st.markdown("---")
-    except Exception:
-        pass
-
-    try:
-        notice_res = supabase.table("app_settings").select("value").eq("key", "active_notice").execute()
-        if notice_res.data and len(notice_res.data) > 0 and notice_res.data[0].get('value'):
-            notice_text = notice_res.data[0]['value'].strip()
-            if notice_text:
-                st.markdown(f"""
-                    <div style="background: #1565c0; padding: 14px 20px; border-radius: 10px; color: #ffffff; font-weight: bold; text-align: center; margin-bottom: 15px; font-size: 1.1rem;">
-                        📢 {notice_text}
-                    </div>
-                """, unsafe_allow_html=True)
-    except Exception:
-        pass
-
-    st.markdown(f"""
-        <div style="background: linear-gradient(135deg, #1565c0, #0d47a1); padding: 22px; border-radius: 14px; color: white; text-align: center; margin-bottom: 20px;">
-            <h1 style="margin: 0; font-size: 2.1rem;">🏢 Welcome to {store_title}</h1>
-            <p style="margin: 6px 0 0 0; font-size: 1.05rem;">Your trusted plug for quality provisions, groceries, and goods!</p>
-        </div>
-    """, unsafe_allow_html=True)
-
     st.markdown("### 📱 Quick Navigation (Tap below)")
     c_grid1, c_grid2 = st.columns(2)
     with c_grid1:
@@ -1194,14 +1193,21 @@ else:
                         
                         if any("Quoted" in str(o['status']) for o in ord_group):
                             st.markdown("---")
-                            st.info("💡 Prices have been set by our store! If you are satisfied with the prices, click below to confirm and send your final order to us, then proceed to make your payment.")
+                            st.info(
+                                f"💡 **Bank Transfer Payment Instructions**\n\n"
+                                f"Please transfer **₦{b_total:,.2f}** to our store account:\n"
+                                f"🏦 **Bank:** Moniepoint MFB\n"
+                                f"🔢 **Account Number:** 8140325192\n"
+                                f"👤 **Account Name:** Sammyreks Business Center\n\n"
+                                f"Once transferred, click below to confirm your order and notify staff!"
+                            )
                             
-                            if st.button(f"✅ Confirm Prices & Send Final Order [{batch_ts}]", key=f"cust_confirm_btn_{batch_ts}"):
+                            if st.button(f"✅ Confirm Payment & Send Final Order [{batch_ts}]", key=f"cust_confirm_btn_{batch_ts}"):
                                 for o in ord_group:
                                     supabase.table("orders").update({"status": "Confirmed by Customer - Pending Payment"}).eq("id", int(o['id'])).execute()
-                                st.success("✅ Final order sent to store! Please make your payment so staff can finalize and send your receipt.")
+                                st.success("✅ Payment notification sent to staff! Once verified, your final receipt will be generated.")
                                 st.rerun()
             else:
                 st.info("No orders found for this phone number.")
 
-st.sidebar.caption(f"{store_title} v15.8 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v15.9 | {date.today().year}")
