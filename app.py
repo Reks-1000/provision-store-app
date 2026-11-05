@@ -255,44 +255,6 @@ else:
     view_mode = "STAFF"
 
 # ==========================================
-# TOP WELCOME BANNER & NOTICE BOARD (RENDERED AT THE TOP)
-# ==========================================
-try:
-    vid_res = supabase.table("app_settings").select("value").eq("key", "broadcast_video_url").execute()
-    if vid_res.data and len(vid_res.data) > 0 and vid_res.data[0].get('value'):
-        b_video_url = vid_res.data[0]['value'].strip()
-        if b_video_url and b_video_url.lower() not in ["none", "", "nan"]:
-            st.markdown("""
-                <div style="background: linear-gradient(135deg, #0d47a1, #1565c0); padding: 10px 15px; border-radius: 10px; color: white; text-align: center; margin-bottom: 12px; font-weight: bold;">
-                    📢 FEATURED BROADCAST VIDEO ADVERT & ANNOUNCEMENT
-                </div>
-            """, unsafe_allow_html=True)
-            st.video(b_video_url)
-            st.markdown("---")
-except Exception:
-    pass
-
-try:
-    notice_res = supabase.table("app_settings").select("value").eq("key", "active_notice").execute()
-    if notice_res.data and len(notice_res.data) > 0 and notice_res.data[0].get('value'):
-        notice_text = notice_res.data[0]['value'].strip()
-        if notice_text:
-            st.markdown(f"""
-                <div style="background: #1565c0; padding: 14px 20px; border-radius: 10px; color: #ffffff; font-weight: bold; text-align: center; margin-bottom: 15px; font-size: 1.1rem;">
-                    📢 {notice_text}
-                </div>
-            """, unsafe_allow_html=True)
-except Exception:
-    pass
-
-st.markdown(f"""
-    <div style="background: linear-gradient(135deg, #1565c0, #0d47a1); padding: 22px; border-radius: 14px; color: white; text-align: center; margin-bottom: 20px;">
-        <h1 style="margin: 0; font-size: 2.1rem;">🏢 Welcome to {store_title}</h1>
-        <p style="margin: 6px 0 0 0; font-size: 1.05rem;">Your trusted plug for quality provisions, groceries, and goods!</p>
-    </div>
-""", unsafe_allow_html=True)
-
-# ==========================================
 # 4. STAFF & CEO DASHBOARD
 # ==========================================
 if view_mode == "STAFF":
@@ -970,9 +932,47 @@ if view_mode == "STAFF":
             st.warning("⚠️ Access restricted to CEO accounts only.")
 
 # ==========================================
-# 5. INDEPENDENT CUSTOMER SHOP PORTAL
+# 5. INDEPENDENT CUSTOMER SHOP PORTAL (WELCOME BANNER & VIDEO DISPLAYED HERE)
 # ==========================================
 else:
+    # 1. WELCOME BANNER AT THE VERY TOP
+    st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #1565c0, #0d47a1); padding: 22px; border-radius: 14px; color: white; text-align: center; margin-bottom: 20px;">
+            <h1 style="margin: 0; font-size: 2.1rem;">🏢 Welcome to {store_title}</h1>
+            <p style="margin: 6px 0 0 0; font-size: 1.05rem;">Your trusted plug for quality provisions, groceries, and goods!</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # 2. NOTICE BOARD TICKER BELOW WELCOME BANNER
+    try:
+        notice_res = supabase.table("app_settings").select("value").eq("key", "active_notice").execute()
+        if notice_res.data and len(notice_res.data) > 0 and notice_res.data[0].get('value'):
+            notice_text = notice_res.data[0]['value'].strip()
+            if notice_text:
+                st.markdown(f"""
+                    <div style="background: #1565c0; padding: 14px 20px; border-radius: 10px; color: #ffffff; font-weight: bold; text-align: center; margin-bottom: 15px; font-size: 1.1rem;">
+                        📢 {notice_text}
+                    </div>
+                """, unsafe_allow_html=True)
+    except Exception:
+        pass
+
+    # 3. BROADCAST VIDEO ADVERT BELOW NOTICE BOARD
+    try:
+        vid_res = supabase.table("app_settings").select("value").eq("key", "broadcast_video_url").execute()
+        if vid_res.data and len(vid_res.data) > 0 and vid_res.data[0].get('value'):
+            b_video_url = vid_res.data[0]['value'].strip()
+            if b_video_url and b_video_url.lower() not in ["none", "", "nan"]:
+                st.markdown("""
+                    <div style="background: linear-gradient(135deg, #0d47a1, #1565c0); padding: 8px 12px; border-radius: 8px; color: white; text-align: center; margin-bottom: 10px; font-weight: bold; font-size: 0.95rem;">
+                        📢 FEATURED BROADCAST VIDEO ADVERT & ANNOUNCEMENT
+                    </div>
+                """, unsafe_allow_html=True)
+                st.video(b_video_url)
+                st.markdown("---")
+    except Exception:
+        pass
+
     st.markdown("### 📱 Quick Navigation (Tap below)")
     c_grid1, c_grid2 = st.columns(2)
     with c_grid1:
@@ -1210,4 +1210,4 @@ else:
             else:
                 st.info("No orders found for this phone number.")
 
-st.sidebar.caption(f"{store_title} v15.9 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v16.0 | {date.today().year}")
