@@ -8,6 +8,7 @@ from PIL import Image
 import math
 import hashlib
 import urllib.parse
+import random
 import cloudinary
 import cloudinary.uploader
 
@@ -932,7 +933,7 @@ if view_mode == "STAFF":
             st.warning("⚠️ Access restricted to CEO accounts only.")
 
 # ==========================================
-# 5. INDEPENDENT CUSTOMER SHOP PORTAL (WELCOME BANNER & VIDEO DISPLAYED HERE)
+# 5. INDEPENDENT CUSTOMER SHOP PORTAL
 # ==========================================
 else:
     # 1. WELCOME BANNER AT THE VERY TOP
@@ -1024,6 +1025,7 @@ else:
                             st.session_state.active_cust_name = c_name_cart.strip()
                             st.session_state.active_cust_phone = c_phone_cart.strip()
                             checkout_timestamp = get_now()
+                            unique_pay_ref = f"SRK-{random.randint(1000, 9999)}"
 
                             for item in st.session_state.cart:
                                 order_payload = {
@@ -1033,6 +1035,7 @@ else:
                                     "status": "Order Placed",
                                     "contact_phone": c_phone_cart.strip(),
                                     "total_price": float(item['total_price']),
+                                    "payment_ref": unique_pay_ref,
                                     "date": date.today().isoformat(),
                                     "timestamp": checkout_timestamp
                                 }
@@ -1040,7 +1043,7 @@ else:
                             
                             st.session_state.cart = []
                             st.session_state.cust_active_page = "📜 Transaction History"
-                            st.success("✅ Order submitted successfully!")
+                            st.success(f"✅ Order submitted successfully! Reference: {unique_pay_ref}")
                             st.rerun()
 
         df_shop = fetch_dataframe_cached("products")
@@ -1128,6 +1131,7 @@ else:
         if st.button("🚀 Submit Independent Special Request", use_container_width=True, key="submit_req_btn"):
             if cust_n.strip() and cust_p.strip():
                 batch_timestamp = get_now()
+                unique_pay_ref = f"SRK-{random.randint(1000, 9999)}"
                 for e in st.session_state.request_items_temp:
                     if e['item'].strip():
                         supabase.table("orders").insert({
@@ -1137,12 +1141,13 @@ else:
                             "status": "Pending Price Audit",
                             "contact_phone": cust_p.strip(),
                             "total_price": 0.0,
+                            "payment_ref": unique_pay_ref,
                             "date": date.today().isoformat(),
                             "timestamp": batch_timestamp
                         }).execute()
                 st.session_state.request_items_temp = [{"item": "", "qty": 1}]
                 st.session_state.cust_active_page = "📜 Transaction History"
-                st.success("Special request submitted!")
+                st.success(f"Special request submitted! Reference: {unique_pay_ref}")
                 st.rerun()
 
     # PAGE 3: TRACK ORDER
@@ -1150,7 +1155,7 @@ else:
         st.subheader("🔍 Track Order Status")
         track_phone = normalize_phone(st.text_input("Enter Phone Number", value=st.session_state.active_cust_phone, key="track_phone_input"))
         if track_phone.strip():
-            res_track = supabase.table("orders").select("id, item, qty, status, total_price, date, timestamp").eq("contact_phone", track_phone.strip()).order("id", desc=True).execute()
+            res_track = supabase.table("orders").select("id, item, qty, status, total_price, payment_ref, date, timestamp").eq("contact_phone", track_phone.strip()).order("id", desc=True).execute()
             if res_track.data:
                 st.dataframe(pd.DataFrame(res_track.data), use_container_width=True, hide_index=True)
             else:
@@ -1170,7 +1175,7 @@ else:
                     supabase.table("messages").insert({"sender": "Customer", "customer_phone": c_phone_chat.strip(), "message": user_msg, "timestamp": get_now()}).execute()
                     st.rerun()
 
-    # PAGE 5: TRANSACTION HISTORY & CUSTOMER QUOTE CONFIRMATION
+    # PAGE 5: TRANSACTION HISTORY & DEDICATED REFERENCE CONFIRMATION
     elif st.session_state.cust_active_page == "📜 Transaction History":
         st.subheader("📜 Customer Order & Quoted Price History")
         history_phone = normalize_phone(st.text_input("Enter Phone Number to load history", value=st.session_state.active_cust_phone, key="hist_phone_input"))
@@ -1187,9 +1192,10 @@ else:
                 for batch_ts, ord_group in batches.items():
                     b_total = sum([o['total_price'] for o in ord_group])
                     primary_status = ord_group[0]['status']
+                    pay_ref = ord_group[0].get('payment_ref', 'N/A')
                     
-                    with st.expander(f"📦 Order on {batch_ts} — Status: [{primary_status}] — Total: ₦{b_total:,.2f}"):
-                        st.dataframe(pd.DataFrame(ord_group)[['item', 'qty', 'status', 'total_price']], use_container_width=True, hide_index=True)
+                    with st.expander(f"📦 Order on {batch_ts} | Ref: [{pay_ref}] — Status: [{primary_status}] — Total: ₦{b_total:,.2f}"):
+                        st.dataframe(pd.DataFrame(ord_group)[['item', 'qty', 'status', 'total_price', 'payment_ref']], use_container_width=True, hide_index=True)
                         
                         if any("Quoted" in str(o['status']) for o in ord_group):
                             st.markdown("---")
@@ -1198,16 +1204,17 @@ else:
                                 f"Please transfer **₦{b_total:,.2f}** to our store account:\n"
                                 f"🏦 **Bank:** Moniepoint MFB\n"
                                 f"🔢 **Account Number:** 8140325192\n"
-                                f"👤 **Account Name:** Sammyreks Business Center\n\n"
-                                f"Once transferred, click below to confirm your order and notify staff!"
+                                f"👤 **Account Name:** Sammyreks Business Center\n"
+                                f"📝 **Reference Note:** `{pay_ref}`\n\n"
+                                f"Once transferred, click below to confirm your payment with reference `{pay_ref}`!"
                             )
                             
-                            if st.button(f"✅ Confirm Payment & Send Final Order [{batch_ts}]", key=f"cust_confirm_btn_{batch_ts}"):
+                            if st.button(f"✅ Confirm Payment & Send Final Order [{pay_ref}]", key=f"cust_confirm_btn_{pay_ref}"):
                                 for o in ord_group:
                                     supabase.table("orders").update({"status": "Confirmed by Customer - Pending Payment"}).eq("id", int(o['id'])).execute()
-                                st.success("✅ Payment notification sent to staff! Once verified, your final receipt will be generated.")
+                                st.success(f"✅ Payment notification sent to staff for reference {pay_ref}! Once verified, your thermal receipt will be issued.")
                                 st.rerun()
             else:
                 st.info("No orders found for this phone number.")
 
-st.sidebar.caption(f"{store_title} v16.0 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v16.1 | {date.today().year}")
