@@ -712,9 +712,11 @@ if view_mode == "STAFF":
                 
                 st.dataframe(selected_verify_data['group'][['id', 'item', 'qty', 'status', 'total_price', 'payment_ref']], use_container_width=True, hide_index=True)
                 
-                if selected_verify_data['proof_url']:
+                # Safely render proof image only if valid
+                proof_link = selected_verify_data.get('proof_url')
+                if proof_link and isinstance(proof_link, str) and proof_link.startswith("http"):
                     st.markdown("📸 **Customer Uploaded Payment Proof:**")
-                    st.image(selected_verify_data['proof_url'], width=350)
+                    st.image(proof_link, width=350)
                 else:
                     st.info("ℹ️ Customer has not uploaded payment proof yet.")
                 
@@ -1234,4 +1236,4 @@ else:
             else:
                 st.info("No orders found for this phone number.")
 
-st.sidebar.caption(f"{store_title} v16.3 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v16.4 | {date.today().year}")
