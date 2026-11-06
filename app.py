@@ -268,7 +268,7 @@ if view_mode == "STAFF":
         "📊 Dashboard", 
         "💳 POS & Sales", 
         "📦 Inventory", 
-        "📋 Orders", 
+        "📋 Orders & Quotes", 
         "💬 Chats", 
         "📓 Debtors", 
         "⚙️ Settings", 
@@ -631,104 +631,98 @@ if view_mode == "STAFF":
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
 
-    # TAB 3: ORDERS & PAYMENT AUTHORIZATION CENTER
+    # TAB 3: ORDERS & QUOTES REVIEW CENTER
     with tabs[3]:
-        st.header("📋 Consolidated Customer Orders & Payment Authorization Center")
-        
-        order_filter_mode = st.radio("Filter Orders By Type", ["All Orders", "🛍️ Cart Orders Only", "📝 Special Requests Only"], horizontal=True, key="staff_order_filter")
+        st.header("📋 Orders & Quotes Audit Center")
         
         df_order_list = fetch_dataframe("orders")
         
         if not df_order_list.empty and 'item' in df_order_list.columns:
-            if order_filter_mode == "🛍️ Cart Orders Only":
-                df_filtered_orders = df_order_list[~df_order_list['item'].str.startswith("SPECIAL:", na=False)]
-            elif order_filter_mode == "📝 Special Requests Only":
-                df_filtered_orders = df_order_list[df_order_list['item'].str.startswith("SPECIAL:", na=False)]
-            else:
-                df_filtered_orders = df_order_list
+            st.subheader("✍️ 1. Audit Customer Orders & Propose Availability/Substitutes")
+            
+            request_batches = {}
+            for (cust, phone, ts), group in df_order_list.groupby(['customer', 'contact_phone', 'timestamp']):
+                label = f"Order: {cust} ({phone}) — {len(group)} Item(s) [{ts}]"
+                request_batches[label] = group
 
-            st.subheader("✍️ 1. Audit & Price Special Requests / Substitutes")
-            df_requests = df_order_list[df_order_list['item'].str.startswith("SPECIAL:", na=False)]
-            if not df_requests.empty:
-                request_batches = {}
-                for (cust, phone, ts), group in df_requests.groupby(['customer', 'contact_phone', 'timestamp']):
-                    label = f"Special Request: {cust} ({phone}) — {len(group)} Item(s) [{ts}]"
-                    request_batches[label] = group
-
-                selected_batch_label = st.selectbox("Select Special Request Batch to Price", list(request_batches.keys()), key="audit_batch_sel")
+            if request_batches:
+                selected_batch_label = st.selectbox("Select Order Batch to Audit", list(request_batches.keys()), key="audit_batch_sel")
                 selected_group = request_batches[selected_batch_label]
 
                 with st.form("multi_item_audit_form"):
-                    st.write(f"### Auditing Request for **{selected_group.iloc[0]['customer']}** ({selected_group.iloc[0]['contact_phone']})")
+                    st.write(f"### Reviewing Order for **{selected_group.iloc[0]['customer']}** ({selected_group.iloc[0]['contact_phone']})")
                     
                     audit_payloads = []
                     grand_batch_total = 0.0
 
                     for idx, row in selected_group.iterrows():
                         st.markdown(f"---")
-                        item_clean_name = str(row['item']).replace("SPECIAL:", "").strip()
-                        st.markdown(f"#### Item #{row['id']}: **{item_clean_name}** (Qty Requested: `{row['qty']}`)")
+                        item_name = str(row['item'])
+                        st.markdown(f"#### Item ID #{row['id']}: **{item_name}** (Qty: `{row['qty']}`)")
                         
                         ca1, ca2, ca3 = st.columns(3)
                         with ca1:
-                            u_price = st.number_input(f"Unit Price for '{item_clean_name}' (₦)", min_value=0.0, value=float(row['total_price']/row['qty']) if row['qty']>0 else 0.0, key=f"u_price_{row['id']}")
+                            u_price = st.number_input(f"Unit Price for Item #{row['id']} (₦)", min_value=0.0, value=float(row['total_price']/row['qty']) if row['qty']>0 else 0.0, key=f"u_price_{row['id']}")
                         with ca2:
                             item_total = u_price * float(row['qty'])
                             st.write(f"**Item Total:** ₦{item_total:,.2f}")
                             grand_batch_total += item_total
                         with ca3:
-                            is_available = st.selectbox(f"Stock Availability", ["Available", "Unavailable / Suggest Substitute"], key=f"avail_{row['id']}")
+                            availability_status = st.selectbox(
+                                f"Stock Status / Substitute Option", 
+                                ["Available", "Unavailable / Suggest Substitute", "Out of Stock"], 
+                                key=f"avail_{row['id']}"
+                            )
 
                         audit_payloads.append({
                             "id": int(row['id']),
                             "unit_price": u_price,
                             "item_total": item_total,
-                            "status": f"Quoted - {is_available}"
+                            "status": f"Quoted - {availability_status}"
                         })
 
                     st.markdown("---")
-                    st.markdown(f"### 🧮 **Batch Grand Total: ₦{grand_batch_total:,.2f}**")
+                    st.markdown(f"### 🧮 **Proposed Grand Total: ₦{grand_batch_total:,.2f}**")
                     
-                    if st.form_submit_button("💾 Send Price Quotes & Availability to Customer"):
+                    if st.form_submit_button("📤 Send Quote & Options Back to Customer"):
                         for payload in audit_payloads:
                             supabase.table("orders").update({
                                 "total_price": payload['item_total'],
                                 "status": payload['status']
                             }).eq("id", payload['id']).execute()
-                        st.success(f"Quotes sent for customer review!")
+                        st.success("Quote, prices, and availability/substitutes sent back to customer portal!")
                         st.rerun()
 
             st.divider()
-            st.subheader("🏁 2. Verify Payment Proof & Authorize Final Thermal Receipt")
+            st.subheader("🏁 2. Verify Customer Payment Proof & Finalize Receipt")
             
             batch_groups = {}
-            for (cust, phone, ts, date_val), group in df_filtered_orders.groupby(['customer', 'contact_phone', 'timestamp', 'date']):
+            for (cust, phone, ts, date_val), group in df_order_list.groupby(['customer', 'contact_phone', 'timestamp', 'date']):
                 b_total = group['total_price'].sum() if 'total_price' in group.columns else 0.0
                 status_val = group['status'].iloc[0] if not group['status'].empty else "Pending"
                 pay_ref = group['payment_ref'].iloc[0] if 'payment_ref' in group.columns and group['payment_ref'].iloc[0] else "N/A"
                 proof_url = group['proof_url'].iloc[0] if 'proof_url' in group.columns else None
                 
                 label = f"Ref: [{pay_ref}] | Status: [{status_val}] | {cust} ({phone}) — Total: ₦{b_total:,.2f}"
-                batch_groups[label] = {"customer": cust, "phone": phone, "timestamp": ts, "group": group, "total": b_total, "proof_url": proof_url}
+                batch_groups[label] = {"customer": cust, "phone": phone, "timestamp": ts, "group": group, "total": b_total, "proof_url": proof_url, "pay_ref": pay_ref}
 
             if batch_groups:
-                selected_order_label = st.selectbox("Select Order Batch to Review Payment", list(batch_groups.keys()), key="auth_order_sel")
-                selected_batch_data = batch_groups[selected_order_label]
+                selected_verify_label = st.selectbox("Select Order to Verify Payment Proof", list(batch_groups.keys()), key="verify_pay_sel")
+                selected_verify_data = batch_groups[selected_verify_label]
                 
-                st.dataframe(selected_batch_data['group'][['id', 'item', 'qty', 'status', 'total_price', 'payment_ref']], use_container_width=True, hide_index=True)
+                st.dataframe(selected_verify_data['group'][['id', 'item', 'qty', 'status', 'total_price', 'payment_ref']], use_container_width=True, hide_index=True)
                 
-                # Display uploaded payment proof if available
-                if selected_batch_data['proof_url']:
-                    st.markdown("📸 **Uploaded Payment Proof / Screenshot:**")
-                    st.image(selected_batch_data['proof_url'], width=350)
+                if selected_verify_data['proof_url']:
+                    st.markdown("📸 **Customer Uploaded Payment Proof:**")
+                    st.image(selected_verify_data['proof_url'], width=350)
                 else:
                     st.info("ℹ️ Customer has not uploaded payment proof yet.")
                 
-                col_auth1, col_auth2 = st.columns(2)
-                with col_auth1:
-                    if st.button("✅ Confirm Payment & Generate Thermal Receipt", use_container_width=True, key="auth_pay_btn"):
+                col_v1, col_v2 = st.columns(2)
+                with col_v1:
+                    if st.button("✅ Approve Payment & Generate Successful Receipt", use_container_width=True, key="approve_pay_btn"):
                         sold_items_formatted = []
-                        for idx, o in selected_batch_data['group'].iterrows():
+                        for idx, o in selected_verify_data['group'].iterrows():
                             clean_item_name = str(o['item']).replace("SPECIAL:", "").replace("[Cart Order]", "").strip()
                             q = float(o['qty']) if o['qty'] > 0 else 1.0
                             tp = float(o['total_price'])
@@ -753,31 +747,31 @@ if view_mode == "STAFF":
                                 "date": date.today().isoformat(),
                                 "timestamp": get_now(),
                                 "worker": user_logged,
-                                "customer_name": selected_batch_data['customer'],
-                                "customer_phone": selected_batch_data['phone']
+                                "customer_name": selected_verify_data['customer'],
+                                "customer_phone": selected_verify_data['phone']
                             }
                             supabase.table("sales").insert(sale_payload).execute()
 
                         st.session_state.last_receipt = {
                             "type": "OFFICIAL PURCHASE RECEIPT",
-                            "customer": selected_batch_data['customer'],
-                            "phone": selected_batch_data['phone'],
+                            "customer": selected_verify_data['customer'],
+                            "phone": selected_verify_data['phone'],
                             "date": get_now(),
                             "sold_items": sold_items_formatted,
-                            "grand_total": selected_batch_data['total'],
+                            "grand_total": selected_verify_data['total'],
                             "cashier": user_logged
                         }
-                        st.success("Payment verified and confirmed! Final thermal receipt generated.")
+                        st.success("Payment verified and approved! Thermal receipt generated.")
                         st.rerun()
 
-                with col_auth2:
-                    if st.button("❌ Reject Payment / Fake Proof", use_container_width=True, key="auth_cancel_btn"):
-                        for idx, o in selected_batch_data['group'].iterrows():
-                            supabase.table("orders").update({"status": "Payment Failed - Fake or Invalid Proof"}).eq("id", int(o['id'])).execute()
-                        st.warning("Payment rejected. Marked as invalid proof.")
+                with col_v2:
+                    if st.button("❌ Reject Payment (Invalid Proof)", use_container_width=True, key="reject_pay_btn"):
+                        for idx, o in selected_verify_data['group'].iterrows():
+                            supabase.table("orders").update({"status": "Payment Failed - Invalid Proof"}).eq("id", int(o['id'])).execute()
+                        st.warning("Payment proof rejected.")
                         st.rerun()
-            else:
-                st.info("No orders found matching the selected filter.")
+        else:
+            st.info("No orders found in database.")
 
     # TAB 4: CUSTOMER CHATS
     with tabs[4]:
@@ -1027,7 +1021,7 @@ else:
                     c_phone_cart = normalize_phone(st.text_input("Your Phone Number", value=st.session_state.active_cust_phone, key="chk_phone_input"))
                     c_details_cart = st.text_area("📍 Delivery Address & Order Notes", key="chk_address_input")
                     
-                    if st.form_submit_button("🚀 Submit Independent Order"):
+                    if st.form_submit_button("🚀 Submit Order to Staff"):
                         if c_name_cart.strip() and c_phone_cart.strip():
                             st.session_state.active_cust_name = c_name_cart.strip()
                             st.session_state.active_cust_phone = c_phone_cart.strip()
@@ -1039,7 +1033,7 @@ else:
                                     "customer": c_name_cart.strip(),
                                     "item": f"[Cart Order] {item['name']} ({item['unit']})",
                                     "qty": int(item['qty']),
-                                    "status": "Order Placed",
+                                    "status": "Order Placed - Pending Staff Quote",
                                     "contact_phone": c_phone_cart.strip(),
                                     "total_price": float(item['total_price']),
                                     "payment_ref": unique_pay_ref,
@@ -1050,7 +1044,7 @@ else:
                             
                             st.session_state.cart = []
                             st.session_state.cust_active_page = "📜 Transaction History"
-                            st.success(f"✅ Order submitted successfully! Reference: {unique_pay_ref}")
+                            st.success(f"✅ Order submitted to staff! Reference: {unique_pay_ref}")
                             st.rerun()
 
         df_shop = fetch_dataframe_cached("products")
@@ -1135,7 +1129,7 @@ else:
             st.session_state.request_items_temp.append({"item": "", "qty": 1})
             st.rerun()
 
-        if st.button("🚀 Submit Independent Special Request", use_container_width=True, key="submit_req_btn"):
+        if st.button("🚀 Submit Special Request to Staff", use_container_width=True, key="submit_req_btn"):
             if cust_n.strip() and cust_p.strip():
                 batch_timestamp = get_now()
                 unique_pay_ref = f"SRK-{random.randint(1000, 9999)}"
@@ -1145,7 +1139,7 @@ else:
                             "customer": cust_n.strip(),
                             "item": f"SPECIAL: {e['item'].strip()}",
                             "qty": int(e['qty']),
-                            "status": "Pending Price Audit",
+                            "status": "Order Placed - Pending Staff Quote",
                             "contact_phone": cust_p.strip(),
                             "total_price": 0.0,
                             "payment_ref": unique_pay_ref,
@@ -1154,7 +1148,7 @@ else:
                         }).execute()
                 st.session_state.request_items_temp = [{"item": "", "qty": 1}]
                 st.session_state.cust_active_page = "📜 Transaction History"
-                st.success(f"Special request submitted! Reference: {unique_pay_ref}")
+                st.success(f"Special request sent to staff! Reference: {unique_pay_ref}")
                 st.rerun()
 
     # PAGE 3: TRACK ORDER
@@ -1182,7 +1176,7 @@ else:
                     supabase.table("messages").insert({"sender": "Customer", "customer_phone": c_phone_chat.strip(), "message": user_msg, "timestamp": get_now()}).execute()
                     st.rerun()
 
-    # PAGE 5: TRANSACTION HISTORY & PAYMENT PROOF UPLOAD
+    # PAGE 5: TRANSACTION HISTORY & PAYMENT UPLOAD
     elif st.session_state.cust_active_page == "📜 Transaction History":
         st.subheader("📜 Customer Order & Quoted Price History")
         history_phone = normalize_phone(st.text_input("Enter Phone Number to load history", value=st.session_state.active_cust_phone, key="hist_phone_input"))
@@ -1207,36 +1201,37 @@ else:
                         if any("Quoted" in str(o['status']) for o in ord_group):
                             st.markdown("---")
                             st.info(
-                                f"💡 **Bank Transfer Payment Instructions**\n\n"
-                                f"Please transfer **₦{b_total:,.2f}** to our store account:\n"
+                                f"💡 **Staff Audited Quote & Payment Instructions**\n\n"
+                                f"Please review the item availability and substitutes above.\n"
+                                f"When ready, transfer **₦{b_total:,.2f}** to our store account:\n"
                                 f"🏦 **Bank:** Moniepoint MFB\n"
                                 f"🔢 **Account Number:** 8140325192\n"
                                 f"👤 **Account Name:** Sammyreks Business Center\n"
-                                f"📝 **Reference Note:** `{pay_ref}`\n\n"
-                                f"Upload your transfer screenshot/proof below after payment."
+                                f"📝 **Reference Note (Must Include):** `{pay_ref}`\n\n"
+                                f"Upload your payment receipt/screenshot below once transfer is done."
                             )
                             
-                            proof_file = st.file_uploader("Upload Transfer Receipt / Screenshot", type=["png", "jpg", "jpeg"], key=f"proof_up_{batch_ts}")
+                            proof_file = st.file_uploader("Upload Transfer Receipt (Image/Screenshot)", type=["png", "jpg", "jpeg"], key=f"proof_up_{batch_ts}")
                             
-                            if st.button(f"📤 Submit Payment Proof for Verification [{pay_ref}]", key=f"cust_proof_btn_{batch_ts}"):
+                            if st.button(f"🚀 Submit Payment Proof for Verification [{pay_ref}]", key=f"cust_proof_btn_{batch_ts}"):
                                 if proof_file is not None:
                                     uploaded_proof_url = upload_image_to_cloudinary(proof_file, folder="sammyreks_payment_proofs")
                                     if uploaded_proof_url:
                                         for o in ord_group:
                                             supabase.table("orders").update({
-                                                "status": "Payment Proof Submitted - Awaiting Staff Verification",
+                                                "status": "Payment Submitted - Pending Staff Verification",
                                                 "proof_url": uploaded_proof_url
                                             }).eq("id", int(o['id'])).execute()
-                                        st.success(f"✅ Payment proof uploaded successfully! Staff will verify and generate your receipt.")
+                                        st.success(f"✅ Payment proof uploaded successfully for Ref `{pay_ref}`! Staff will review and unlock your official receipt.")
                                         st.rerun()
                                     else:
                                         st.error("Failed to upload image. Please try again.")
                                 else:
-                                    st.warning("Please select a transfer screenshot file before submitting.")
+                                    st.warning("Please attach your payment screenshot or receipt before submitting.")
                         
                         elif primary_status == "Completed / Paid":
-                            st.success("🎉 Payment verified successfully! Your order has been fulfilled.")
+                            st.success("🎉 Payment verified successfully! Your transaction is complete.")
             else:
                 st.info("No orders found for this phone number.")
 
-st.sidebar.caption(f"{store_title} v16.2 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v16.3 | {date.today().year}")
