@@ -687,12 +687,12 @@ if view_mode == "STAFF":
                                     
                     with c_rep2:
                         st.write("⚡ **One-Tap Receipt Action**")
-                        # Check if customer has an active order waiting for payment verification
+                        # Fetch customer orders safely
                         cust_orders = supabase.table("orders").select("*").eq("contact_phone", active_phone).execute()
                         
-                        if not cust_orders.empty or (cust_orders.data and len(cust_orders.data) > 0):
+                        if cust_orders.data and len(cust_orders.data) > 0:
                             # Filter pending orders
-                            pending_orders = [o for o in cust_orders.data if "Pending" in o.get('status', '')]
+                            pending_orders = [o for o in cust_orders.data if "Pending" in o.get('status', '') or "Submitted" in o.get('status', '') or "Order Placed" in o.get('status', '')]
                             
                             if pending_orders:
                                 order_ref = pending_orders[0].get('payment_ref', 'SRK-XXXX')
@@ -700,7 +700,6 @@ if view_mode == "STAFF":
                                 cust_nm = pending_orders[0].get('customer', 'Customer')
                                 
                                 if st.button(f"✅ One-Tap Approve & Release Final Receipt [{order_ref}]", key="staff_one_tap_btn", use_container_width=True):
-                                    # Build itemized list for receipt
                                     itemized_lines = []
                                     for o in pending_orders:
                                         supabase.table("orders").update({"status": "Completed / Paid"}).eq("id", int(o['id'])).execute()
@@ -721,7 +720,7 @@ if view_mode == "STAFF":
 
                                     items_joined = "\n".join(itemized_lines)
                                     
-                                    # Push formatted receipt into chat as a system message
+                                    # Push formatted itemized receipt into chat
                                     success_notice = (
                                         f"🎉 **OFFICIAL PURCHASE RECEIPT — PAID & VERIFIED!**\n\n"
                                         f"🔖 **Reference Code:** `{order_ref}`\n"
@@ -746,12 +745,13 @@ if view_mode == "STAFF":
                                     st.success("Itemized receipt successfully generated and sent to chat!")
                                     st.rerun()
                             else:
-                                st.info("No pending orders requiring approval.")
+                                st.info("No active pending orders for this customer.")
+                        else:
+                            st.info("No orders found for this customer thread.")
             else:
                 st.info("No active chat conversations yet.")
         except Exception as chat_err:
             st.error(f"Chat dashboard error: {chat_err}")
-
     # TAB 4: DEBTORS
     with tabs[4]:
         st.header("📓 Debtors Management")
