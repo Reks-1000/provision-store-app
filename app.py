@@ -341,16 +341,9 @@ if view_mode == "STAFF":
                         profit_final = grand_total - (uc * sale_qty)
                         pos_ref = f"POS-{random.randint(1000, 9999)}"
                         
-                        sale_data = {
-                            "item": sel_item, "unit_type": sale_unit, "qty": int(sale_qty),
-                            "total": float(grand_total), "profit": float(profit_final), "date": date.today().isoformat(),
-                            "timestamp": get_now(), "worker": user_logged, "customer_name": c_name_pos, "customer_phone": c_phone_pos,
-                            "payment_source": pay_source_pos, "payment_ref": pos_ref
-                        }
-                        supabase.table("sales").insert(sale_data).execute()
+                        sold_item_entry = [{"name": sel_item, "unit": sale_unit, "qty": int(sale_qty), "price": up, "total": grand_total}]
                         
-                        # Save permanent receipt record for future bank-style lookup
-                        sold_item_entry = [{"name": sel_item, "unit": sale_unit, "qty": sale_qty, "price": up, "total": grand_total}]
+                        # Save single consolidated transaction receipt
                         supabase.table("saved_receipts").insert({
                             "payment_ref": pos_ref,
                             "customer_name": c_name_pos or "Walk-in Customer",
@@ -361,6 +354,14 @@ if view_mode == "STAFF":
                             "cashier": user_logged,
                             "timestamp": get_now()
                         }).execute()
+
+                        sale_data = {
+                            "item": f"{sel_item} ({sale_qty} {sale_unit})", "unit_type": sale_unit, "qty": int(sale_qty),
+                            "total": float(grand_total), "profit": float(profit_final), "date": date.today().isoformat(),
+                            "timestamp": get_now(), "worker": user_logged, "customer_name": c_name_pos, "customer_phone": c_phone_pos,
+                            "payment_source": pay_source_pos, "payment_ref": pos_ref
+                        }
+                        supabase.table("sales").insert(sale_data).execute()
                         
                         new_qty = float(p['qty_cartons'] - cartons_deducted)
                         supabase.table("products").update({"qty_cartons": new_qty}).eq("id", int(p['id'])).execute()
@@ -740,7 +741,7 @@ if view_mode == "STAFF":
                                         
                                         saved_items_list.append({"name": clean_nm, "unit": "Unit", "qty": int(q_val), "price": u_price, "total": t_val})
                                         
-                                        # Log to sales analytics with payment source & reference code
+                                        # Log to sales analytics
                                         supabase.table("sales").insert({
                                             "item": clean_nm, "unit_type": "Unit", "qty": int(q_val),
                                             "total": t_val, "profit": t_val * 0.15, "date": date.today().isoformat(),
@@ -748,7 +749,7 @@ if view_mode == "STAFF":
                                             "customer_phone": active_phone, "payment_source": pay_source_choice, "payment_ref": order_ref
                                         }).execute()
 
-                                    # Save permanent receipt record for future bank-style lookup
+                                    # Save ONE single permanent receipt record representing the entire transaction
                                     supabase.table("saved_receipts").insert({
                                         "payment_ref": order_ref,
                                         "customer_name": cust_nm,
@@ -819,7 +820,7 @@ if view_mode == "STAFF":
     # TAB 4: SAVED RECEIPTS VAULT (BANK-STYLE)
     with tabs[4]:
         st.header("📜 Saved Receipts Vault (Bank-Style Ledger)")
-        st.caption("All completed purchase receipts are permanently archived here for auditing and verification.")
+        st.caption("All completed purchase transactions are permanently archived here as individual receipts.")
         
         df_vault = fetch_dataframe("saved_receipts")
         if not df_vault.empty:
@@ -1316,4 +1317,4 @@ else:
             else:
                 st.info("No saved receipts found for this phone number.")
 
-st.sidebar.caption(f"{store_title} v17.3 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v17.4 | {date.today().year}")
