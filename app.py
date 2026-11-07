@@ -314,6 +314,7 @@ if view_mode == "STAFF":
                 sale_qty = st.number_input("Quantity", min_value=1, value=1, key="pos_sale_qty")
                 c_name_pos = st.text_input("Customer Name", key="pos_cust_name")
                 c_phone_pos = normalize_phone(st.text_input("Customer Phone Number", key="pos_cust_phone"))
+                pay_source_pos = st.selectbox("Payment Gateway / Source", ["Moniepoint MFB", "OPay", "Access Bank", "Cash", "Transfer"], key="pos_pay_source")
             with col_pos2:
                 up = p['price_carton'] if sale_unit == m_label else (p['price_pack'] if sale_unit == p_label else p['price_retail'])
                 grand_total = up * sale_qty
@@ -340,7 +341,8 @@ if view_mode == "STAFF":
                         sale_data = {
                             "item": sel_item, "unit_type": sale_unit, "qty": int(sale_qty),
                             "total": float(grand_total), "profit": float(profit_final), "date": date.today().isoformat(),
-                            "timestamp": get_now(), "worker": user_logged, "customer_name": c_name_pos, "customer_phone": c_phone_pos
+                            "timestamp": get_now(), "worker": user_logged, "customer_name": c_name_pos, "customer_phone": c_phone_pos,
+                            "payment_source": pay_source_pos, "payment_ref": "POS-CASH"
                         }
                         supabase.table("sales").insert(sale_data).execute()
                         
@@ -355,7 +357,9 @@ if view_mode == "STAFF":
                             "date": get_now(),
                             "sold_items": [{"name": sel_item, "unit": sale_unit, "qty": sale_qty, "price": up, "total": grand_total}],
                             "grand_total": grand_total, 
-                            "cashier": user_logged
+                            "cashier": user_logged,
+                            "payment_source": pay_source_pos,
+                            "payment_ref": "POS-CASH"
                         }
                         st.success("Sale Recorded & Thermal Receipt Generated!")
                         st.rerun()
@@ -396,6 +400,8 @@ if view_mode == "STAFF":
             cust_name_rc = rec.get('customer', 'Walk-in Customer')
             cust_phone_rc = rec.get('phone', 'N/A')
             g_total_rc = rec.get('grand_total', 0.0)
+            p_source_rc = rec.get('payment_source', 'Moniepoint MFB')
+            p_ref_rc = rec.get('payment_ref', 'N/A')
 
             receipt_rows_html = "".join([
                 f"<tr><td style='padding:6px 0; font-size:0.9rem;'><b>{itm.get('name','Item')}</b><br><span style='font-size:0.75rem; color:#555;'>{itm.get('qty',1)} x ₦{itm.get('price',0.0):,.2f} ({itm.get('unit','Unit')})</span></td><td style='padding:6px 0; text-align:right; font-size:0.9rem; vertical-align:top; font-weight:bold;'>₦{itm.get('total',0.0):,.2f}</td></tr>"
@@ -413,6 +419,8 @@ if view_mode == "STAFF":
                     <p style="margin:2px 0;"><b>DATE:</b> {rec.get('date','')}</p>
                     <p style="margin:2px 0;"><b>CUSTOMER:</b> {cust_name_rc}</p>
                     <p style="margin:2px 0;"><b>PHONE:</b> {cust_phone_rc}</p>
+                    <p style="margin:2px 0;"><b>REF CODE:</b> {p_ref_rc}</p>
+                    <p style="margin:2px 0;"><b>PAYMENT SOURCE:</b> {p_source_rc}</p>
                     <p style="margin:2px 0;"><b>CASHIER:</b> {rec.get('cashier','Staff')}</p>
                 </div>
                 <table style="width:100%; border-collapse:collapse; margin-bottom:15px;">
@@ -663,7 +671,8 @@ if view_mode == "STAFF":
                             if img_proof and isinstance(img_proof, str) and img_proof.startswith("http"):
                                 st.image(img_proof, width=300, caption="Uploaded Payment Proof")
                         elif sender_role == "System":
-                            st.success(f"🤖 **System / Receipt** *({msg.get('timestamp','')})*:\n{msg_text}")
+                            st.markdown(f"🤖 **Receipt Notice** *({msg.get('timestamp','')})*")
+                            st.markdown(msg_text, unsafe_allow_html=True)
                         else:
                             st.markdown(f"🏢 **{sender_role}** *({msg.get('timestamp','')})*:\n> {msg_text}")
 
@@ -687,11 +696,11 @@ if view_mode == "STAFF":
                                     
                     with c_rep2:
                         st.write("⚡ **One-Tap Receipt Action**")
-                        # Fetch customer orders safely
+                        pay_source_choice = st.selectbox("Select Payment Account/Gateway", ["Moniepoint MFB", "OPay", "Access Bank", "Transfer"], key="staff_pay_source_choice")
+                        
                         cust_orders = supabase.table("orders").select("*").eq("contact_phone", active_phone).execute()
                         
                         if cust_orders.data and len(cust_orders.data) > 0:
-                            # Filter pending orders
                             pending_orders = [o for o in cust_orders.data if "Pending" in o.get('status', '') or "Submitted" in o.get('status', '') or "Order Placed" in o.get('status', '')]
                             
                             if pending_orders:
@@ -699,8 +708,8 @@ if view_mode == "STAFF":
                                 grand_sum = sum([float(o.get('total_price', 0.0)) for o in pending_orders])
                                 cust_nm = pending_orders[0].get('customer', 'Customer')
                                 
-                                if st.button(f"✅ One-Tap Approve & Release Final Receipt [{order_ref}]", key="staff_one_tap_btn", use_container_width=True):
-                                    itemized_lines = []
+                                if st.button(f"✅ One-Tap Approve & Release Thermal Receipt [{order_ref}]", key="staff_one_tap_btn", use_container_width=True):
+                                    receipt_rows_html = ""
                                     for o in pending_orders:
                                         supabase.table("orders").update({"status": "Completed / Paid"}).eq("id", int(o['id'])).execute()
                                         
@@ -709,49 +718,71 @@ if view_mode == "STAFF":
                                         t_val = float(o['total_price'])
                                         u_price = t_val / q_val if q_val > 0 else t_val
                                         
-                                        itemized_lines.append(f"• **{clean_nm}** (Qty: {int(q_val)}) @ ₦{u_price:,.2f} = **₦{t_val:,.2f}**")
+                                        receipt_rows_html += f"<tr><td style='padding:6px 0; font-size:0.9rem;'><b>{clean_nm}</b><br><span style='font-size:0.75rem; color:#555;'>{int(q_val)} x ₦{u_price:,.2f}</span></td><td style='padding:6px 0; text-align:right; font-size:0.9rem; vertical-align:top; font-weight:bold;'>₦{t_val:,.2f}</td></tr>"
                                         
-                                        # Log to sales analytics
+                                        # Log to sales analytics with payment source & reference code
                                         supabase.table("sales").insert({
                                             "item": clean_nm, "unit_type": "Unit", "qty": int(q_val),
                                             "total": t_val, "profit": t_val * 0.15, "date": date.today().isoformat(),
-                                            "timestamp": get_now(), "worker": user_logged, "customer_name": cust_nm, "customer_phone": active_phone
+                                            "timestamp": get_now(), "worker": user_logged, "customer_name": cust_nm, 
+                                            "customer_phone": active_phone, "payment_source": pay_source_choice, "payment_ref": order_ref
                                         }).execute()
 
-                                    items_joined = "\n".join(itemized_lines)
-                                    
-                                    # Push formatted itemized receipt into chat
-                                    success_notice = (
-                                        f"🎉 **OFFICIAL PURCHASE RECEIPT — PAID & VERIFIED!**\n\n"
-                                        f"🔖 **Reference Code:** `{order_ref}`\n"
-                                        f"👤 **Customer:** {cust_nm}\n"
-                                        f"📅 **Date:** {get_now()}\n\n"
-                                        f"🛒 **Itemized Purchase Breakdown:**\n"
-                                        f"{items_joined}\n\n"
-                                        f"----------------------------------------\n"
-                                        f"💰 **Grand Total Paid:** ₦{grand_sum:,.2f}\n"
-                                        f"----------------------------------------\n"
-                                        f"✅ *Thank you for your patronage! Your transaction is fully confirmed.*"
-                                    )
+                                    # Clean, Professional HTML Thermal Receipt Box for Chat
+                                    professional_receipt_html = f"""
+                                    <div style="background:#fdfcf7; color:#111; padding:20px; border-radius:6px; border:1px solid #dcd6cd; font-family:'Courier New', Courier, monospace; max-width:380px; margin:10px 0; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                                        <div style="text-align:center; border-bottom:1px dashed #333; padding-bottom:10px; margin-bottom:10px;">
+                                            <h3 style="margin:0; font-size:1.2rem; letter-spacing:1px;">{store_title.upper()}</h3>
+                                            <p style="margin:2px 0; font-size:0.75rem; color:#444;">OFFICIAL PURCHASE RECEIPT</p>
+                                            <span style="background:#222; color:#fff; font-size:0.75rem; padding:2px 6px; border-radius:3px; font-weight:bold;">PAID & VERIFIED</span>
+                                        </div>
+                                        <div style="font-size:0.8rem; margin-bottom:10px; border-bottom:1px dashed #333; padding-bottom:6px;">
+                                            <p style="margin:2px 0;"><b>REF CODE:</b> {order_ref}</p>
+                                            <p style="margin:2px 0;"><b>CUSTOMER:</b> {cust_nm}</p>
+                                            <p style="margin:2px 0;"><b>PHONE:</b> {active_phone}</p>
+                                            <p style="margin:2px 0;"><b>GATEWAY:</b> {pay_source_choice}</p>
+                                            <p style="margin:2px 0;"><b>DATE:</b> {get_now()}</p>
+                                        </div>
+                                        <table style="width:100%; border-collapse:collapse; margin-bottom:12px;">
+                                            <thead>
+                                                <tr style="border-bottom:1px solid #333; font-size:0.8rem;">
+                                                    <th style="text-align:left; padding-bottom:4px;">ITEM / DESC</th>
+                                                    <th style="text-align:right; padding-bottom:4px;">TOTAL</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>{receipt_rows_html}</tbody>
+                                        </table>
+                                        <div style="border-top:1px dashed #333; border-bottom:1px dashed #333; padding:8px 0; margin-bottom:10px;">
+                                            <div style="display:flex; justify-content:space-between; font-size:1rem; font-weight:bold;">
+                                                <span>TOTAL PAID:</span>
+                                                <span>₦{grand_sum:,.2f}</span>
+                                            </div>
+                                        </div>
+                                        <div style="text-align:center; font-size:0.75rem; color:#555;">
+                                            <p style="margin:2px 0;">*** THANK YOU FOR YOUR PATRONAGE ***</p>
+                                        </div>
+                                    </div>
+                                    """
                                     
                                     supabase.table("messages").insert({
                                         "sender": "System",
                                         "customer_phone": active_phone,
                                         "customer_name": cust_nm,
-                                        "message": success_notice,
+                                        "message": professional_receipt_html,
                                         "timestamp": get_now()
                                     }).execute()
                                     
-                                    st.success("Itemized receipt successfully generated and sent to chat!")
+                                    st.success("Professional receipt successfully generated and sent to chat!")
                                     st.rerun()
                             else:
-                                st.info("No active pending orders for this customer.")
+                                st.info("No active pending orders requiring approval.")
                         else:
                             st.info("No orders found for this customer thread.")
             else:
                 st.info("No active chat conversations yet.")
         except Exception as chat_err:
             st.error(f"Chat dashboard error: {chat_err}")
+
     # TAB 4: DEBTORS
     with tabs[4]:
         st.header("📓 Debtors Management")
@@ -971,7 +1002,6 @@ else:
 
                             items_summary = ", ".join([f"{i['qty']} {i['unit']}(s) of {i['name']}" for i in st.session_state.cart])
                             
-                            # Insert into orders
                             for item in st.session_state.cart:
                                 order_payload = {
                                     "customer": c_name_cart.strip(),
@@ -986,7 +1016,6 @@ else:
                                 }
                                 supabase.table("orders").insert(order_payload).execute()
                             
-                            # Insert opening chat message automatically
                             chat_intro = f"Hello! I just submitted an order. Items: {items_summary}. Total: ₦{cart_total:,.2f}. My Reference Code is `{unique_pay_ref}`."
                             supabase.table("messages").insert({
                                 "sender": "Customer",
@@ -1104,7 +1133,6 @@ else:
                             "timestamp": batch_timestamp
                         }).execute()
                         
-                # Automatically open chat thread
                 chat_intro = f"Hello! I submitted a special request for: {', '.join(req_names)}. My Reference Code is `{unique_pay_ref}`."
                 supabase.table("messages").insert({
                     "sender": "Customer",
@@ -1146,7 +1174,6 @@ else:
             st.divider()
             st.markdown("### 💬 Chat Conversation")
             
-            # Fetch conversation messages
             chat_res = supabase.table("messages").select("*").eq("customer_phone", c_chat_phone.strip()).order("id").execute()
             
             for m in chat_res.data:
@@ -1159,13 +1186,13 @@ else:
                     if proof and isinstance(proof, str) and proof.startswith("http"):
                         st.image(proof, width=250, caption="Your Uploaded Proof")
                 elif sender == "System":
-                    st.success(f"🤖 **System / Receipt** *({m.get('timestamp','')})*:\n{msg}")
+                    st.markdown(f"🤖 **Receipt Notice** *({m.get('timestamp','')})*")
+                    st.markdown(msg, unsafe_allow_html=True)
                 else:
                     st.markdown(f"🏢 **{sender}** *({m.get('timestamp','')})*:\n> {msg}")
             
             st.divider()
             
-            # Customer message input & proof upload
             with st.form("customer_chat_form", clear_on_submit=True):
                 cust_input_msg = st.text_input("Type message / reply here...", key="cust_chat_input")
                 cust_proof_file = st.file_uploader("Upload Payment Receipt / Screenshot (Optional)", type=["png", "jpg", "jpeg"])
@@ -1178,7 +1205,6 @@ else:
                         if proof_url:
                             full_msg += "\n[Payment Proof Image Attached]"
                             
-                        # Insert message
                         supabase.table("messages").insert({
                             "sender": "Customer",
                             "customer_phone": c_chat_phone.strip(),
@@ -1188,11 +1214,10 @@ else:
                             "timestamp": get_now()
                         }).execute()
                         
-                        # If proof was uploaded, also update order status so staff sees it ready for verification
                         if proof_url:
                             supabase.table("orders").update({"status": "Payment Submitted - Pending Verification"}).eq("contact_phone", c_chat_phone.strip()).execute()
                             
                         st.success("Message sent!")
                         st.rerun()
 
-st.sidebar.caption(f"{store_title} v17.1 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v17.2 | {date.today().year}")
