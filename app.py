@@ -9,6 +9,7 @@ import math
 import hashlib
 import urllib.parse
 import random
+import json
 import cloudinary
 import cloudinary.uploader
 
@@ -269,6 +270,7 @@ if view_mode == "STAFF":
         "💳 POS & Sales", 
         "📦 Inventory", 
         "💬 Live Chat & One-Tap Receipt Center", 
+        "📜 Saved Receipts Vault", 
         "📓 Debtors", 
         "⚙️ Settings", 
         "💸 Expenses", 
@@ -337,14 +339,28 @@ if view_mode == "STAFF":
                             cartons_deducted = sale_qty / (packs_per_c * units_per_p)
                             
                         profit_final = grand_total - (uc * sale_qty)
+                        pos_ref = f"POS-{random.randint(1000, 9999)}"
                         
                         sale_data = {
                             "item": sel_item, "unit_type": sale_unit, "qty": int(sale_qty),
                             "total": float(grand_total), "profit": float(profit_final), "date": date.today().isoformat(),
                             "timestamp": get_now(), "worker": user_logged, "customer_name": c_name_pos, "customer_phone": c_phone_pos,
-                            "payment_source": pay_source_pos, "payment_ref": "POS-CASH"
+                            "payment_source": pay_source_pos, "payment_ref": pos_ref
                         }
                         supabase.table("sales").insert(sale_data).execute()
+                        
+                        # Save permanent receipt record for future bank-style lookup
+                        sold_item_entry = [{"name": sel_item, "unit": sale_unit, "qty": sale_qty, "price": up, "total": grand_total}]
+                        supabase.table("saved_receipts").insert({
+                            "payment_ref": pos_ref,
+                            "customer_name": c_name_pos or "Walk-in Customer",
+                            "customer_phone": c_phone_pos or "N/A",
+                            "items_json": json.dumps(sold_item_entry),
+                            "grand_total": float(grand_total),
+                            "payment_source": pay_source_pos,
+                            "cashier": user_logged,
+                            "timestamp": get_now()
+                        }).execute()
                         
                         new_qty = float(p['qty_cartons'] - cartons_deducted)
                         supabase.table("products").update({"qty_cartons": new_qty}).eq("id", int(p['id'])).execute()
@@ -355,13 +371,13 @@ if view_mode == "STAFF":
                             "customer": c_name_pos or "Walk-in Customer",
                             "phone": c_phone_pos or "N/A", 
                             "date": get_now(),
-                            "sold_items": [{"name": sel_item, "unit": sale_unit, "qty": sale_qty, "price": up, "total": grand_total}],
+                            "sold_items": sold_item_entry,
                             "grand_total": grand_total, 
                             "cashier": user_logged,
                             "payment_source": pay_source_pos,
-                            "payment_ref": "POS-CASH"
+                            "payment_ref": pos_ref
                         }
-                        st.success("Sale Recorded & Thermal Receipt Generated!")
+                        st.success("Sale Recorded & Permanent Receipt Saved!")
                         st.rerun()
                 
                 with col_btn2:
@@ -696,7 +712,7 @@ if view_mode == "STAFF":
                                     
                     with c_rep2:
                         st.write("⚡ **One-Tap Receipt Action**")
-                        pay_source_choice = st.selectbox("Select Payment Account/Gateway", ["Moniepoint MFB", "OPay", "Access Bank", "Transfer"], key="staff_pay_source_choice")
+                        pay_source_choice = st.selectbox("Select Payment Account/Gateway", ["Moniepoint MFB", "OPay", "Access Bank", "Cash", "Transfer"], key="staff_pay_source_choice")
                         
                         cust_orders = supabase.table("orders").select("*").eq("contact_phone", active_phone).execute()
                         
@@ -710,6 +726,8 @@ if view_mode == "STAFF":
                                 
                                 if st.button(f"✅ One-Tap Approve & Release Thermal Receipt [{order_ref}]", key="staff_one_tap_btn", use_container_width=True):
                                     receipt_rows_html = ""
+                                    saved_items_list = []
+                                    
                                     for o in pending_orders:
                                         supabase.table("orders").update({"status": "Completed / Paid"}).eq("id", int(o['id'])).execute()
                                         
@@ -720,6 +738,8 @@ if view_mode == "STAFF":
                                         
                                         receipt_rows_html += f"<tr><td style='padding:6px 0; font-size:0.9rem;'><b>{clean_nm}</b><br><span style='font-size:0.75rem; color:#555;'>{int(q_val)} x ₦{u_price:,.2f}</span></td><td style='padding:6px 0; text-align:right; font-size:0.9rem; vertical-align:top; font-weight:bold;'>₦{t_val:,.2f}</td></tr>"
                                         
+                                        saved_items_list.append({"name": clean_nm, "unit": "Unit", "qty": int(q_val), "price": u_price, "total": t_val})
+                                        
                                         # Log to sales analytics with payment source & reference code
                                         supabase.table("sales").insert({
                                             "item": clean_nm, "unit_type": "Unit", "qty": int(q_val),
@@ -727,6 +747,18 @@ if view_mode == "STAFF":
                                             "timestamp": get_now(), "worker": user_logged, "customer_name": cust_nm, 
                                             "customer_phone": active_phone, "payment_source": pay_source_choice, "payment_ref": order_ref
                                         }).execute()
+
+                                    # Save permanent receipt record for future bank-style lookup
+                                    supabase.table("saved_receipts").insert({
+                                        "payment_ref": order_ref,
+                                        "customer_name": cust_nm,
+                                        "customer_phone": active_phone,
+                                        "items_json": json.dumps(saved_items_list),
+                                        "grand_total": float(grand_sum),
+                                        "payment_source": pay_source_choice,
+                                        "cashier": user_logged,
+                                        "timestamp": get_now()
+                                    }).execute()
 
                                     # Clean, Professional HTML Thermal Receipt Box for Chat
                                     professional_receipt_html = f"""
@@ -760,6 +792,7 @@ if view_mode == "STAFF":
                                         </div>
                                         <div style="text-align:center; font-size:0.75rem; color:#555;">
                                             <p style="margin:2px 0;">*** THANK YOU FOR YOUR PATRONAGE ***</p>
+                                            <p style="margin:2px 0;">Saved permanently to transaction vault.</p>
                                         </div>
                                     </div>
                                     """
@@ -772,7 +805,7 @@ if view_mode == "STAFF":
                                         "timestamp": get_now()
                                     }).execute()
                                     
-                                    st.success("Professional receipt successfully generated and sent to chat!")
+                                    st.success("Professional receipt saved & sent to chat!")
                                     st.rerun()
                             else:
                                 st.info("No active pending orders requiring approval.")
@@ -783,8 +816,42 @@ if view_mode == "STAFF":
         except Exception as chat_err:
             st.error(f"Chat dashboard error: {chat_err}")
 
-    # TAB 4: DEBTORS
+    # TAB 4: SAVED RECEIPTS VAULT (BANK-STYLE)
     with tabs[4]:
+        st.header("📜 Saved Receipts Vault (Bank-Style Ledger)")
+        st.caption("All completed purchase receipts are permanently archived here for auditing and verification.")
+        
+        df_vault = fetch_dataframe("saved_receipts")
+        if not df_vault.empty:
+            search_vault = st.text_input("🔍 Search by Ref Code or Customer Name/Phone", key="vault_search")
+            if search_vault:
+                df_vault = df_vault[
+                    df_vault['payment_ref'].str.contains(search_vault, case=False, na=False) |
+                    df_vault['customer_name'].str.contains(search_vault, case=False, na=False) |
+                    df_vault['customer_phone'].str.contains(search_vault, case=False, na=False)
+                ]
+            
+            for idx, r_row in df_vault.sort_values('id', ascending=False).iterrows():
+                with st.expander(f"🧾 Ref: [{r_row['payment_ref']}] — {r_row['customer_name']} ({r_row['customer_phone']}) — ₦{float(r_row['grand_total']):,.2f} [{r_row['timestamp']}]"):
+                    col_v1, col_v2 = st.columns([2, 1])
+                    with col_v1:
+                        st.write(f"**Gateway Source:** {r_row['payment_source']}")
+                        st.write(f"**Cashier / Staff:** {r_row['cashier']}")
+                        st.write(f"**Transaction Timestamp:** {r_row['timestamp']}")
+                        
+                        try:
+                            items_parsed = json.loads(r_row['items_json'])
+                            items_html_vault = "".join([f"<li>{i.get('name')} ({i.get('qty')} x ₦{i.get('price',0):,.2f}) = ₦{i.get('total',0):,.2f}</li>" for i in items_parsed])
+                            st.markdown(f"<ul>{items_html_vault}</ul>", unsafe_allow_html=True)
+                        except Exception:
+                            st.write(r_row['items_json'])
+                    with col_v2:
+                        st.metric("Total Amount", f"₦{float(r_row['grand_total']):,.2f}")
+        else:
+            st.info("No saved receipts in vault yet.")
+
+    # TAB 5: DEBTORS
+    with tabs[5]:
         st.header("📓 Debtors Management")
         df_debtors = fetch_dataframe("debtors")
         if not df_debtors.empty:
@@ -829,8 +896,8 @@ if view_mode == "STAFF":
                     st.success("New debt logged to cloud.")
                     st.rerun()
 
-    # TAB 5: SETTINGS
-    with tabs[5]:
+    # TAB 6: SETTINGS
+    with tabs[6]:
         st.header("⚙️ User Settings & Announcements")
         st.subheader("📌 Notice Board Ticker & Direct Cloudinary Broadcast Video Upload")
         
@@ -872,8 +939,8 @@ if view_mode == "STAFF":
                 st.success("Notice board and broadcast video updated successfully!")
                 st.rerun()
 
-    # TAB 6: EXPENSES (CEO ONLY)
-    with tabs[6]:
+    # TAB 7: EXPENSES (CEO ONLY)
+    with tabs[7]:
         st.header("💸 Expenditure Log")
         if role == "CEO":
             df_exp_view = fetch_dataframe("expenses")
@@ -889,8 +956,8 @@ if view_mode == "STAFF":
         else:
             st.warning("⚠️ Access restricted to CEO accounts only.")
 
-    # TAB 7: WORKERS (CEO ONLY)
-    with tabs[7]:
+    # TAB 8: WORKERS (CEO ONLY)
+    with tabs[8]:
         st.header("👥 Staff Management")
         if role == "CEO":
             df_workers = fetch_dataframe("workers")
@@ -964,8 +1031,8 @@ else:
         if st.button("📝 Multi-Item Request", use_container_width=True, key="nav_req_btn"):
             st.session_state.cust_active_page = "📝 Multi-Item Special Request"
             st.rerun()
-        if st.button("🔍 Track Order Status", use_container_width=True, key="nav_track_btn"):
-            st.session_state.cust_active_page = "🔍 Track Order"
+        if st.button("📜 My Saved Receipts Vault", use_container_width=True, key="nav_vault_btn"):
+            st.session_state.cust_active_page = "📜 My Saved Receipts"
             st.rerun()
 
     st.markdown("---")
@@ -1149,18 +1216,7 @@ else:
                 st.success(f"Special request sent to chat! Reference: {unique_pay_ref}")
                 st.rerun()
 
-    # PAGE 3: TRACK ORDER
-    elif st.session_state.cust_active_page == "🔍 Track Order":
-        st.subheader("🔍 Track Order Status")
-        track_phone = normalize_phone(st.text_input("Enter Phone Number", value=st.session_state.active_cust_phone, key="track_phone_input"))
-        if track_phone.strip():
-            res_track = supabase.table("orders").select("id, item, qty, status, total_price, payment_ref, date, timestamp").eq("contact_phone", track_phone.strip()).order("id", desc=True).execute()
-            if res_track.data:
-                st.dataframe(pd.DataFrame(res_track.data), use_container_width=True, hide_index=True)
-            else:
-                st.info("No orders found.")
-
-    # PAGE 4: LIVE CHAT & RECEIPT CENTER
+    # PAGE 3: LIVE CHAT & RECEIPT CENTER
     elif st.session_state.cust_active_page == "💬 Live Chat & Receipt Center":
         st.subheader("💬 Live Chat & Payment Receipt Center")
         
@@ -1220,4 +1276,44 @@ else:
                         st.success("Message sent!")
                         st.rerun()
 
-st.sidebar.caption(f"{store_title} v17.2 | {date.today().year}")
+    # PAGE 4: CUSTOMER SAVED RECEIPTS VAULT
+    elif st.session_state.cust_active_page == "📜 My Saved Receipts":
+        st.subheader("📜 My Saved Transaction Receipts")
+        st.caption("Review your permanently archived bank-style transaction receipts here.")
+        
+        c_vault_phone = normalize_phone(st.text_input("Enter Your Phone Number to View Receipts", value=st.session_state.active_cust_phone, key="cust_vault_phone"))
+        
+        if c_vault_phone.strip():
+            cust_receipts = supabase.table("saved_receipts").select("*").eq("customer_phone", c_vault_phone.strip()).order("id", desc=True).execute()
+            
+            if cust_receipts.data and len(cust_receipts.data) > 0:
+                for cr in cust_receipts.data:
+                    with st.expander(f"🧾 Receipt Ref: [{cr['payment_ref']}] — ₦{float(cr['grand_total']):,.2f} [{cr['timestamp']}]"):
+                        try:
+                            items_p = json.loads(cr['items_json'])
+                            rows_h = "".join([f"<tr><td>{i.get('name')} ({i.get('qty')} x ₦{i.get('price',0):,.2f})</td><td style='text-align:right;'>₦{i.get('total',0):,.2f}</td></tr>" for i in items_p])
+                        except Exception:
+                            rows_h = f"<tr><td colspan='2'>{cr['items_json']}</td></tr>"
+
+                        st.markdown(f"""
+                        <div style="background:#fdfcf7; color:#111; padding:20px; border-radius:6px; border:1px solid #dcd6cd; font-family:'Courier New', Courier, monospace;">
+                            <div style="text-align:center; border-bottom:1px dashed #333; padding-bottom:8px; margin-bottom:8px;">
+                                <h4 style="margin:0;">{store_title.upper()}</h4>
+                                <p style="margin:2px 0; font-size:0.75rem;">VERIFIED TRANSACTION RECEIPT</p>
+                            </div>
+                            <p style="margin:2px 0; font-size:0.8rem;"><b>Ref:</b> {cr['payment_ref']}</p>
+                            <p style="margin:2px 0; font-size:0.8rem;"><b>Gateway:</b> {cr['payment_source']}</p>
+                            <p style="margin:2px 0; font-size:0.8rem;"><b>Date:</b> {cr['timestamp']}</p>
+                            <hr style="border:0; border-top:1px dashed #333;"/>
+                            <table style="width:100%; font-size:0.85rem;">{rows_h}</table>
+                            <hr style="border:0; border-top:1px dashed #333;"/>
+                            <div style="display:flex; justify-content:space-between; font-weight:bold; font-size:1rem;">
+                                <span>TOTAL PAID:</span>
+                                <span>₦{float(cr['grand_total']):,.2f}</span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+            else:
+                st.info("No saved receipts found for this phone number.")
+
+st.sidebar.caption(f"{store_title} v17.3 | {date.today().year}")
