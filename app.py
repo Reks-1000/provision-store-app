@@ -657,12 +657,13 @@ if view_mode == "STAFF":
                         sender_role = msg.get('sender', 'Customer')
                         msg_text = msg.get('message', '')
                         img_proof = msg.get('proof_url')
-                        ref_code = msg.get('payment_ref')
                         
                         if sender_role == "Customer":
                             st.markdown(f"👤 **Customer** *({msg.get('timestamp','')})*:\n> {msg_text}")
                             if img_proof and isinstance(img_proof, str) and img_proof.startswith("http"):
                                 st.image(img_proof, width=300, caption="Uploaded Payment Proof")
+                        elif sender_role == "System":
+                            st.success(f"🤖 **System / Receipt** *({msg.get('timestamp','')})*:\n{msg_text}")
                         else:
                             st.markdown(f"🏢 **{sender_role}** *({msg.get('timestamp','')})*:\n> {msg_text}")
 
@@ -687,44 +688,65 @@ if view_mode == "STAFF":
                     with c_rep2:
                         st.write("⚡ **One-Tap Receipt Action**")
                         # Check if customer has an active order waiting for payment verification
-                        cust_orders = supabase.table("orders").select("*").eq("contact_phone", active_phone).eq("status", "Payment Submitted - Pending Verification").execute()
+                        cust_orders = supabase.table("orders").select("*").eq("contact_phone", active_phone).execute()
                         
-                        if cust_orders.data:
-                            target_order = cust_orders.data[0]
-                            order_ref = target_order.get('payment_ref', 'SRK-0000')
-                            order_amt = target_order.get('total_price', 0.0)
-                            cust_nm = target_order.get('customer', 'Customer')
+                        if not cust_orders.empty or (cust_orders.data and len(cust_orders.data) > 0):
+                            # Filter pending orders
+                            pending_orders = [o for o in cust_orders.data if "Pending" in o.get('status', '')]
                             
-                            if st.button(f"✅ One-Tap Approve & Release Final Receipt [{order_ref}]", key="staff_one_tap_btn", use_container_width=True):
-                                # Mark orders as Paid
-                                for o in cust_orders.data:
-                                    supabase.table("orders").update({"status": "Completed / Paid"}).eq("id", int(o['id'])).execute()
-                                    
-                                    # Log to sales
-                                    clean_nm = str(o['item']).replace("SPECIAL:", "").replace("[Cart Order]", "").strip()
-                                    q_val = float(o['qty']) if o['qty'] > 0 else 1.0
-                                    t_val = float(o['total_price'])
-                                    
-                                    supabase.table("sales").insert({
-                                        "item": clean_nm, "unit_type": "Unit", "qty": int(q_val),
-                                        "total": t_val, "profit": t_val * 0.15, "date": date.today().isoformat(),
-                                        "timestamp": get_now(), "worker": user_logged, "customer_name": cust_nm, "customer_phone": active_phone
-                                    }).execute()
-
-                                # Push final receipt into chat as a system message
-                                success_notice = f"🎉 PAYMENT SUCCESSFUL & VERIFIED!\nReference Code: `{order_ref}`\nAmount Paid: ₦{order_amt:,.2f}\nYour transaction is completed and receipt has been generated!"
-                                supabase.table("messages").insert({
-                                    "sender": "System",
-                                    "customer_phone": active_phone,
-                                    "customer_name": cust_nm,
-                                    "message": success_notice,
-                                    "timestamp": get_now()
-                                }).execute()
+                            if pending_orders:
+                                order_ref = pending_orders[0].get('payment_ref', 'SRK-XXXX')
+                                grand_sum = sum([float(o.get('total_price', 0.0)) for o in pending_orders])
+                                cust_nm = pending_orders[0].get('customer', 'Customer')
                                 
-                                st.success("Receipt successfully generated and sent to customer chat!")
-                                st.rerun()
-                        else:
-                            st.info("No pending payment proof requiring approval for this thread.")
+                                if st.button(f"✅ One-Tap Approve & Release Final Receipt [{order_ref}]", key="staff_one_tap_btn", use_container_width=True):
+                                    # Build itemized list for receipt
+                                    itemized_lines = []
+                                    for o in pending_orders:
+                                        supabase.table("orders").update({"status": "Completed / Paid"}).eq("id", int(o['id'])).execute()
+                                        
+                                        clean_nm = str(o['item']).replace("SPECIAL:", "").replace("[Cart Order]", "").strip()
+                                        q_val = float(o['qty']) if o['qty'] > 0 else 1.0
+                                        t_val = float(o['total_price'])
+                                        u_price = t_val / q_val if q_val > 0 else t_val
+                                        
+                                        itemized_lines.append(f"• **{clean_nm}** (Qty: {int(q_val)}) @ ₦{u_price:,.2f} = **₦{t_val:,.2f}**")
+                                        
+                                        # Log to sales analytics
+                                        supabase.table("sales").insert({
+                                            "item": clean_nm, "unit_type": "Unit", "qty": int(q_val),
+                                            "total": t_val, "profit": t_val * 0.15, "date": date.today().isoformat(),
+                                            "timestamp": get_now(), "worker": user_logged, "customer_name": cust_nm, "customer_phone": active_phone
+                                        }).execute()
+
+                                    items_joined = "\n".join(itemized_lines)
+                                    
+                                    # Push formatted receipt into chat as a system message
+                                    success_notice = (
+                                        f"🎉 **OFFICIAL PURCHASE RECEIPT — PAID & VERIFIED!**\n\n"
+                                        f"🔖 **Reference Code:** `{order_ref}`\n"
+                                        f"👤 **Customer:** {cust_nm}\n"
+                                        f"📅 **Date:** {get_now()}\n\n"
+                                        f"🛒 **Itemized Purchase Breakdown:**\n"
+                                        f"{items_joined}\n\n"
+                                        f"----------------------------------------\n"
+                                        f"💰 **Grand Total Paid:** ₦{grand_sum:,.2f}\n"
+                                        f"----------------------------------------\n"
+                                        f"✅ *Thank you for your patronage! Your transaction is fully confirmed.*"
+                                    )
+                                    
+                                    supabase.table("messages").insert({
+                                        "sender": "System",
+                                        "customer_phone": active_phone,
+                                        "customer_name": cust_nm,
+                                        "message": success_notice,
+                                        "timestamp": get_now()
+                                    }).execute()
+                                    
+                                    st.success("Itemized receipt successfully generated and sent to chat!")
+                                    st.rerun()
+                            else:
+                                st.info("No pending orders requiring approval.")
             else:
                 st.info("No active chat conversations yet.")
         except Exception as chat_err:
@@ -1173,4 +1195,4 @@ else:
                         st.success("Message sent!")
                         st.rerun()
 
-st.sidebar.caption(f"{store_title} v17.0 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v17.1 | {date.today().year}")
