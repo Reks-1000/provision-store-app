@@ -268,8 +268,7 @@ if view_mode == "STAFF":
         "📊 Dashboard", 
         "💳 POS & Sales", 
         "📦 Inventory", 
-        "📋 Orders & Quotes", 
-        "💬 Chats", 
+        "💬 Live Chat & One-Tap Receipt Center", 
         "📓 Debtors", 
         "⚙️ Settings", 
         "💸 Expenses", 
@@ -631,187 +630,108 @@ if view_mode == "STAFF":
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
 
-    # TAB 3: ORDERS & QUOTES REVIEW CENTER
+    # TAB 3: LIVE CHAT & ONE-TAP RECEIPT CENTER
     with tabs[3]:
-        st.header("📋 Orders & Quotes Audit Center")
+        st.header("💬 Live Chat & One-Tap Receipt Center")
         
-        df_order_list = fetch_dataframe("orders")
-        
-        if not df_order_list.empty and 'item' in df_order_list.columns:
-            st.subheader("✍️ 1. Audit Customer Orders & Propose Availability/Substitutes")
-            
-            request_batches = {}
-            for (cust, phone, ts), group in df_order_list.groupby(['customer', 'contact_phone', 'timestamp']):
-                label = f"Order: {cust} ({phone}) — {len(group)} Item(s) [{ts}]"
-                request_batches[label] = group
-
-            if request_batches:
-                selected_batch_label = st.selectbox("Select Order Batch to Audit", list(request_batches.keys()), key="audit_batch_sel")
-                selected_group = request_batches[selected_batch_label]
-
-                with st.form("multi_item_audit_form"):
-                    st.write(f"### Reviewing Order for **{selected_group.iloc[0]['customer']}** ({selected_group.iloc[0]['contact_phone']})")
-                    
-                    audit_payloads = []
-                    grand_batch_total = 0.0
-
-                    for idx, row in selected_group.iterrows():
-                        st.markdown(f"---")
-                        item_name = str(row['item'])
-                        st.markdown(f"#### Item ID #{row['id']}: **{item_name}** (Qty: `{row['qty']}`)")
-                        
-                        ca1, ca2, ca3 = st.columns(3)
-                        with ca1:
-                            u_price = st.number_input(f"Unit Price for Item #{row['id']} (₦)", min_value=0.0, value=float(row['total_price']/row['qty']) if row['qty']>0 else 0.0, key=f"u_price_{row['id']}")
-                        with ca2:
-                            item_total = u_price * float(row['qty'])
-                            st.write(f"**Item Total:** ₦{item_total:,.2f}")
-                            grand_batch_total += item_total
-                        with ca3:
-                            availability_status = st.selectbox(
-                                f"Stock Status / Substitute Option", 
-                                ["Available", "Unavailable / Suggest Substitute", "Out of Stock"], 
-                                key=f"avail_{row['id']}"
-                            )
-
-                        audit_payloads.append({
-                            "id": int(row['id']),
-                            "unit_price": u_price,
-                            "item_total": item_total,
-                            "status": f"Quoted - {availability_status}"
-                        })
-
-                    st.markdown("---")
-                    st.markdown(f"### 🧮 **Proposed Grand Total: ₦{grand_batch_total:,.2f}**")
-                    
-                    if st.form_submit_button("📤 Send Quote & Options Back to Customer"):
-                        for payload in audit_payloads:
-                            supabase.table("orders").update({
-                                "total_price": payload['item_total'],
-                                "status": payload['status']
-                            }).eq("id", payload['id']).execute()
-                        st.success("Quote, prices, and availability/substitutes sent back to customer portal!")
-                        st.rerun()
-
-            st.divider()
-            st.subheader("🏁 2. Verify Customer Payment Proof & Finalize Receipt")
-            
-            batch_groups = {}
-            for (cust, phone, ts, date_val), group in df_order_list.groupby(['customer', 'contact_phone', 'timestamp', 'date']):
-                b_total = group['total_price'].sum() if 'total_price' in group.columns else 0.0
-                status_val = group['status'].iloc[0] if not group['status'].empty else "Pending"
-                pay_ref = group['payment_ref'].iloc[0] if 'payment_ref' in group.columns and group['payment_ref'].iloc[0] else "N/A"
-                proof_url = group['proof_url'].iloc[0] if 'proof_url' in group.columns else None
-                
-                label = f"Ref: [{pay_ref}] | Status: [{status_val}] | {cust} ({phone}) — Total: ₦{b_total:,.2f}"
-                batch_groups[label] = {"customer": cust, "phone": phone, "timestamp": ts, "group": group, "total": b_total, "proof_url": proof_url, "pay_ref": pay_ref}
-
-            if batch_groups:
-                selected_verify_label = st.selectbox("Select Order to Verify Payment Proof", list(batch_groups.keys()), key="verify_pay_sel")
-                selected_verify_data = batch_groups[selected_verify_label]
-                
-                st.dataframe(selected_verify_data['group'][['id', 'item', 'qty', 'status', 'total_price', 'payment_ref']], use_container_width=True, hide_index=True)
-                
-                # Safely render proof image only if valid
-                proof_link = selected_verify_data.get('proof_url')
-                if proof_link and isinstance(proof_link, str) and proof_link.startswith("http"):
-                    st.markdown("📸 **Customer Uploaded Payment Proof:**")
-                    st.image(proof_link, width=350)
-                else:
-                    st.info("ℹ️ Customer has not uploaded payment proof yet.")
-                
-                col_v1, col_v2 = st.columns(2)
-                with col_v1:
-                    if st.button("✅ Approve Payment & Generate Successful Receipt", use_container_width=True, key="approve_pay_btn"):
-                        sold_items_formatted = []
-                        for idx, o in selected_verify_data['group'].iterrows():
-                            clean_item_name = str(o['item']).replace("SPECIAL:", "").replace("[Cart Order]", "").strip()
-                            q = float(o['qty']) if o['qty'] > 0 else 1.0
-                            tp = float(o['total_price'])
-                            up_val = tp / q if q > 0 else tp
-                            
-                            sold_items_formatted.append({
-                                "name": clean_item_name,
-                                "unit": "Unit",
-                                "qty": int(q),
-                                "price": up_val,
-                                "total": tp
-                            })
-                            
-                            supabase.table("orders").update({"status": "Completed / Paid"}).eq("id", int(o['id'])).execute()
-                            
-                            sale_payload = {
-                                "item": clean_item_name,
-                                "unit_type": "Unit",
-                                "qty": int(q),
-                                "total": tp,
-                                "profit": tp * 0.15,
-                                "date": date.today().isoformat(),
-                                "timestamp": get_now(),
-                                "worker": user_logged,
-                                "customer_name": selected_verify_data['customer'],
-                                "customer_phone": selected_verify_data['phone']
-                            }
-                            supabase.table("sales").insert(sale_payload).execute()
-
-                        st.session_state.last_receipt = {
-                            "type": "OFFICIAL PURCHASE RECEIPT",
-                            "customer": selected_verify_data['customer'],
-                            "phone": selected_verify_data['phone'],
-                            "date": get_now(),
-                            "sold_items": sold_items_formatted,
-                            "grand_total": selected_verify_data['total'],
-                            "cashier": user_logged
-                        }
-                        st.success("Payment verified and approved! Thermal receipt generated.")
-                        st.rerun()
-
-                with col_v2:
-                    if st.button("❌ Reject Payment (Invalid Proof)", use_container_width=True, key="reject_pay_btn"):
-                        for idx, o in selected_verify_data['group'].iterrows():
-                            supabase.table("orders").update({"status": "Payment Failed - Invalid Proof"}).eq("id", int(o['id'])).execute()
-                        st.warning("Payment proof rejected.")
-                        st.rerun()
-        else:
-            st.info("No orders found in database.")
-
-    # TAB 4: CUSTOMER CHATS
-    with tabs[4]:
-        st.header("💬 Live Customer Communication")
         try:
-            res_msg = supabase.table("messages").select("customer_phone").execute()
+            res_msg = supabase.table("messages").select("customer_phone, customer_name").execute()
             if res_msg.data:
-                unique_phones = list(set([m['customer_phone'] for m in res_msg.data]))
-                selected_phone = st.selectbox("Select Customer Phone Number to Chat", unique_phones, key="chat_phone_sel")
-                
-                if selected_phone:
-                    st.subheader(f"Chat History with {selected_phone}")
-                    chat_data = supabase.table("messages").select("*").eq("customer_phone", selected_phone).order("id").execute()
-                    
-                    for msg in chat_data.data:
-                        role_label = f"👤 {msg['sender']}" if msg['sender'] != "Customer" else "🛍️ Customer"
-                        st.markdown(f"**{role_label}** *({msg['timestamp']})*:\n> {msg['message']}")
-                    
-                    st.divider()
-                    with st.form("staff_reply_form", clear_on_submit=True):
-                        reply_text = st.text_input("Type your response to the customer...", key="staff_reply_input")
-                        if st.form_submit_button("📤 Send Reply"):
-                            if reply_text.strip():
-                                reply_payload = {
-                                    "sender": f"Staff ({user_logged})",
-                                    "customer_phone": selected_phone,
-                                    "message": reply_text.strip(),
-                                    "timestamp": get_now()
-                                }
-                                supabase.table("messages").insert(reply_payload).execute()
-                                st.rerun()
-            else:
-                st.info("No customer chat threads yet.")
-        except Exception as chat_e:
-            st.error(f"Chat portal error: {chat_e}")
+                chat_threads = {}
+                for m in res_msg.data:
+                    ph = m.get('customer_phone')
+                    nm = m.get('customer_name', 'Customer')
+                    if ph:
+                        chat_threads[f"{nm} ({ph})"] = ph
 
-    # TAB 5: DEBTORS
-    with tabs[5]:
+                if chat_threads:
+                    selected_thread_label = st.selectbox("Select Customer Chat Thread", list(chat_threads.keys()), key="staff_chat_sel")
+                    active_phone = chat_threads[selected_thread_label]
+                    
+                    st.markdown(f"### 💬 Conversation with **{selected_thread_label}**")
+                    
+                    # Fetch messages for this thread
+                    thread_msgs = supabase.table("messages").select("*").eq("customer_phone", active_phone).order("id").execute()
+                    
+                    for msg in thread_msgs.data:
+                        sender_role = msg.get('sender', 'Customer')
+                        msg_text = msg.get('message', '')
+                        img_proof = msg.get('proof_url')
+                        ref_code = msg.get('payment_ref')
+                        
+                        if sender_role == "Customer":
+                            st.markdown(f"👤 **Customer** *({msg.get('timestamp','')})*:\n> {msg_text}")
+                            if img_proof and isinstance(img_proof, str) and img_proof.startswith("http"):
+                                st.image(img_proof, width=300, caption="Uploaded Payment Proof")
+                        else:
+                            st.markdown(f"🏢 **{sender_role}** *({msg.get('timestamp','')})*:\n> {msg_text}")
+
+                    st.divider()
+                    
+                    # Staff Reply & One-Tap Receipt Generation Section
+                    c_rep1, c_rep2 = st.columns([2, 1])
+                    with c_rep1:
+                        with st.form("staff_chat_reply_form", clear_on_submit=True):
+                            staff_reply = st.text_input("Type message / availability / substitute options...", key="staff_reply_text")
+                            if st.form_submit_button("📤 Send Chat to Customer"):
+                                if staff_reply.strip():
+                                    supabase.table("messages").insert({
+                                        "sender": f"Staff ({user_logged})",
+                                        "customer_phone": active_phone,
+                                        "customer_name": selected_thread_label.split(" (")[0],
+                                        "message": staff_reply.strip(),
+                                        "timestamp": get_now()
+                                    }).execute()
+                                    st.rerun()
+                                    
+                    with c_rep2:
+                        st.write("⚡ **One-Tap Receipt Action**")
+                        # Check if customer has an active order waiting for payment verification
+                        cust_orders = supabase.table("orders").select("*").eq("contact_phone", active_phone).eq("status", "Payment Submitted - Pending Verification").execute()
+                        
+                        if cust_orders.data:
+                            target_order = cust_orders.data[0]
+                            order_ref = target_order.get('payment_ref', 'SRK-0000')
+                            order_amt = target_order.get('total_price', 0.0)
+                            cust_nm = target_order.get('customer', 'Customer')
+                            
+                            if st.button(f"✅ One-Tap Approve & Release Final Receipt [{order_ref}]", key="staff_one_tap_btn", use_container_width=True):
+                                # Mark orders as Paid
+                                for o in cust_orders.data:
+                                    supabase.table("orders").update({"status": "Completed / Paid"}).eq("id", int(o['id'])).execute()
+                                    
+                                    # Log to sales
+                                    clean_nm = str(o['item']).replace("SPECIAL:", "").replace("[Cart Order]", "").strip()
+                                    q_val = float(o['qty']) if o['qty'] > 0 else 1.0
+                                    t_val = float(o['total_price'])
+                                    
+                                    supabase.table("sales").insert({
+                                        "item": clean_nm, "unit_type": "Unit", "qty": int(q_val),
+                                        "total": t_val, "profit": t_val * 0.15, "date": date.today().isoformat(),
+                                        "timestamp": get_now(), "worker": user_logged, "customer_name": cust_nm, "customer_phone": active_phone
+                                    }).execute()
+
+                                # Push final receipt into chat as a system message
+                                success_notice = f"🎉 PAYMENT SUCCESSFUL & VERIFIED!\nReference Code: `{order_ref}`\nAmount Paid: ₦{order_amt:,.2f}\nYour transaction is completed and receipt has been generated!"
+                                supabase.table("messages").insert({
+                                    "sender": "System",
+                                    "customer_phone": active_phone,
+                                    "customer_name": cust_nm,
+                                    "message": success_notice,
+                                    "timestamp": get_now()
+                                }).execute()
+                                
+                                st.success("Receipt successfully generated and sent to customer chat!")
+                                st.rerun()
+                        else:
+                            st.info("No pending payment proof requiring approval for this thread.")
+            else:
+                st.info("No active chat conversations yet.")
+        except Exception as chat_err:
+            st.error(f"Chat dashboard error: {chat_err}")
+
+    # TAB 4: DEBTORS
+    with tabs[4]:
         st.header("📓 Debtors Management")
         df_debtors = fetch_dataframe("debtors")
         if not df_debtors.empty:
@@ -856,8 +776,8 @@ if view_mode == "STAFF":
                     st.success("New debt logged to cloud.")
                     st.rerun()
 
-    # TAB 6: SETTINGS
-    with tabs[6]:
+    # TAB 5: SETTINGS
+    with tabs[5]:
         st.header("⚙️ User Settings & Announcements")
         st.subheader("📌 Notice Board Ticker & Direct Cloudinary Broadcast Video Upload")
         
@@ -899,8 +819,8 @@ if view_mode == "STAFF":
                 st.success("Notice board and broadcast video updated successfully!")
                 st.rerun()
 
-    # TAB 7: EXPENSES (CEO ONLY)
-    with tabs[7]:
+    # TAB 6: EXPENSES (CEO ONLY)
+    with tabs[6]:
         st.header("💸 Expenditure Log")
         if role == "CEO":
             df_exp_view = fetch_dataframe("expenses")
@@ -916,8 +836,8 @@ if view_mode == "STAFF":
         else:
             st.warning("⚠️ Access restricted to CEO accounts only.")
 
-    # TAB 8: WORKERS (CEO ONLY)
-    with tabs[8]:
+    # TAB 7: WORKERS (CEO ONLY)
+    with tabs[7]:
         st.header("👥 Staff Management")
         if role == "CEO":
             df_workers = fetch_dataframe("workers")
@@ -983,19 +903,16 @@ else:
         if st.button("🛒 Shop Products & Cart", use_container_width=True, key="nav_shop_btn"):
             st.session_state.cust_active_page = "🛒 Shop & Cart"
             st.rerun()
-        if st.button("🔍 Track Order Status", use_container_width=True, key="nav_track_btn"):
-            st.session_state.cust_active_page = "🔍 Track Order"
-            st.rerun()
-        if st.button("💬 Support Chat", use_container_width=True, key="nav_chat_btn"):
-            st.session_state.cust_active_page = "💬 Chat with Us"
+        if st.button("💬 Live Chat & Receipt Center", use_container_width=True, key="nav_chat_btn"):
+            st.session_state.cust_active_page = "💬 Live Chat & Receipt Center"
             st.rerun()
 
     with c_grid2:
         if st.button("📝 Multi-Item Request", use_container_width=True, key="nav_req_btn"):
             st.session_state.cust_active_page = "📝 Multi-Item Special Request"
             st.rerun()
-        if st.button("📜 Transaction History & Receipts", use_container_width=True, key="nav_hist_btn"):
-            st.session_state.cust_active_page = "📜 Transaction History"
+        if st.button("🔍 Track Order Status", use_container_width=True, key="nav_track_btn"):
+            st.session_state.cust_active_page = "🔍 Track Order"
             st.rerun()
 
     st.markdown("---")
@@ -1013,7 +930,7 @@ else:
         """, unsafe_allow_html=True)
 
         if cart_count > 0:
-            with st.expander("🛍️ View Cart & Checkout", expanded=True):
+            with st.expander("🛍️ View Cart & Send Order to Live Chat", expanded=True):
                 cart_df = pd.DataFrame(st.session_state.cart)
                 st.dataframe(cart_df[['name', 'unit', 'qty', 'total_price']], use_container_width=True, hide_index=True)
                 st.markdown(f"### Grand Total: ₦{cart_total:,.2f}")
@@ -1023,13 +940,16 @@ else:
                     c_phone_cart = normalize_phone(st.text_input("Your Phone Number", value=st.session_state.active_cust_phone, key="chk_phone_input"))
                     c_details_cart = st.text_area("📍 Delivery Address & Order Notes", key="chk_address_input")
                     
-                    if st.form_submit_button("🚀 Submit Order to Staff"):
+                    if st.form_submit_button("🚀 Send Order to Live Chat"):
                         if c_name_cart.strip() and c_phone_cart.strip():
                             st.session_state.active_cust_name = c_name_cart.strip()
                             st.session_state.active_cust_phone = c_phone_cart.strip()
                             checkout_timestamp = get_now()
                             unique_pay_ref = f"SRK-{random.randint(1000, 9999)}"
 
+                            items_summary = ", ".join([f"{i['qty']} {i['unit']}(s) of {i['name']}" for i in st.session_state.cart])
+                            
+                            # Insert into orders
                             for item in st.session_state.cart:
                                 order_payload = {
                                     "customer": c_name_cart.strip(),
@@ -1044,9 +964,19 @@ else:
                                 }
                                 supabase.table("orders").insert(order_payload).execute()
                             
+                            # Insert opening chat message automatically
+                            chat_intro = f"Hello! I just submitted an order. Items: {items_summary}. Total: ₦{cart_total:,.2f}. My Reference Code is `{unique_pay_ref}`."
+                            supabase.table("messages").insert({
+                                "sender": "Customer",
+                                "customer_phone": c_phone_cart.strip(),
+                                "customer_name": c_name_cart.strip(),
+                                "message": chat_intro,
+                                "timestamp": get_now()
+                            }).execute()
+
                             st.session_state.cart = []
-                            st.session_state.cust_active_page = "📜 Transaction History"
-                            st.success(f"✅ Order submitted to staff! Reference: {unique_pay_ref}")
+                            st.session_state.cust_active_page = "💬 Live Chat & Receipt Center"
+                            st.success(f"✅ Order & chat opened! Reference: {unique_pay_ref}")
                             st.rerun()
 
         df_shop = fetch_dataframe_cached("products")
@@ -1131,12 +1061,15 @@ else:
             st.session_state.request_items_temp.append({"item": "", "qty": 1})
             st.rerun()
 
-        if st.button("🚀 Submit Special Request to Staff", use_container_width=True, key="submit_req_btn"):
+        if st.button("🚀 Send Special Request to Live Chat", use_container_width=True, key="submit_req_btn"):
             if cust_n.strip() and cust_p.strip():
                 batch_timestamp = get_now()
                 unique_pay_ref = f"SRK-{random.randint(1000, 9999)}"
+                
+                req_names = []
                 for e in st.session_state.request_items_temp:
                     if e['item'].strip():
+                        req_names.append(f"{e['qty']} of {e['item'].strip()}")
                         supabase.table("orders").insert({
                             "customer": cust_n.strip(),
                             "item": f"SPECIAL: {e['item'].strip()}",
@@ -1148,9 +1081,22 @@ else:
                             "date": date.today().isoformat(),
                             "timestamp": batch_timestamp
                         }).execute()
+                        
+                # Automatically open chat thread
+                chat_intro = f"Hello! I submitted a special request for: {', '.join(req_names)}. My Reference Code is `{unique_pay_ref}`."
+                supabase.table("messages").insert({
+                    "sender": "Customer",
+                    "customer_phone": cust_p.strip(),
+                    "customer_name": cust_n.strip(),
+                    "message": chat_intro,
+                    "timestamp": get_now()
+                }).execute()
+
+                st.session_state.active_cust_name = cust_n.strip()
+                st.session_state.active_cust_phone = cust_p.strip()
                 st.session_state.request_items_temp = [{"item": "", "qty": 1}]
-                st.session_state.cust_active_page = "📜 Transaction History"
-                st.success(f"Special request sent to staff! Reference: {unique_pay_ref}")
+                st.session_state.cust_active_page = "💬 Live Chat & Receipt Center"
+                st.success(f"Special request sent to chat! Reference: {unique_pay_ref}")
                 st.rerun()
 
     # PAGE 3: TRACK ORDER
@@ -1164,76 +1110,67 @@ else:
             else:
                 st.info("No orders found.")
 
-    # PAGE 4: SUPPORT CHAT
-    elif st.session_state.cust_active_page == "💬 Chat with Us":
-        st.subheader("💬 Support Chat")
-        c_phone_chat = normalize_phone(st.text_input("Enter Phone Number", value=st.session_state.active_cust_phone, key="cust_chat_phone"))
-        if c_phone_chat.strip():
-            chat_res = supabase.table("messages").select("*").eq("customer_phone", c_phone_chat.strip()).order("id").execute()
-            for m in chat_res.data:
-                st.markdown(f"**{m['sender']}** : {m['message']}")
-            with st.form("cust_msg_form", clear_on_submit=True):
-                user_msg = st.text_input("Type message...", key="cust_msg_input")
-                if st.form_submit_button("Send"):
-                    supabase.table("messages").insert({"sender": "Customer", "customer_phone": c_phone_chat.strip(), "message": user_msg, "timestamp": get_now()}).execute()
-                    st.rerun()
-
-    # PAGE 5: TRANSACTION HISTORY & PAYMENT UPLOAD
-    elif st.session_state.cust_active_page == "📜 Transaction History":
-        st.subheader("📜 Customer Order & Quoted Price History")
-        history_phone = normalize_phone(st.text_input("Enter Phone Number to load history", value=st.session_state.active_cust_phone, key="hist_phone_input"))
+    # PAGE 4: LIVE CHAT & RECEIPT CENTER
+    elif st.session_state.cust_active_page == "💬 Live Chat & Receipt Center":
+        st.subheader("💬 Live Chat & Payment Receipt Center")
         
-        if history_phone.strip():
-            all_cust_orders = supabase.table("orders").select("*").eq("contact_phone", history_phone.strip()).order("timestamp", desc=True).execute()
+        c_chat_name = st.text_input("Your Full Name", value=st.session_state.active_cust_name, key="cust_chat_name")
+        c_chat_phone = normalize_phone(st.text_input("Your Phone Number", value=st.session_state.active_cust_phone, key="cust_chat_phone"))
+        
+        if c_chat_phone.strip():
+            st.session_state.active_cust_name = c_chat_name.strip()
+            st.session_state.active_cust_phone = c_chat_phone.strip()
             
-            if all_cust_orders.data:
-                batches = {}
-                for ord_row in all_cust_orders.data:
-                    t_stamp = ord_row['timestamp']
-                    batches.setdefault(t_stamp, []).append(ord_row)
+            st.divider()
+            st.markdown("### 💬 Chat Conversation")
+            
+            # Fetch conversation messages
+            chat_res = supabase.table("messages").select("*").eq("customer_phone", c_chat_phone.strip()).order("id").execute()
+            
+            for m in chat_res.data:
+                sender = m.get('sender', 'Customer')
+                msg = m.get('message', '')
+                proof = m.get('proof_url')
                 
-                for batch_ts, ord_group in batches.items():
-                    b_total = sum([o['total_price'] for o in ord_group])
-                    primary_status = ord_group[0]['status']
-                    pay_ref = ord_group[0].get('payment_ref', 'N/A')
-                    
-                    with st.expander(f"📦 Order on {batch_ts} | Ref: [{pay_ref}] — Status: [{primary_status}] — Total: ₦{b_total:,.2f}"):
-                        st.dataframe(pd.DataFrame(ord_group)[['item', 'qty', 'status', 'total_price', 'payment_ref']], use_container_width=True, hide_index=True)
+                if sender == "Customer":
+                    st.markdown(f"👤 **You** *({m.get('timestamp','')})*:\n> {msg}")
+                    if proof and isinstance(proof, str) and proof.startswith("http"):
+                        st.image(proof, width=250, caption="Your Uploaded Proof")
+                elif sender == "System":
+                    st.success(f"🤖 **System / Receipt** *({m.get('timestamp','')})*:\n{msg}")
+                else:
+                    st.markdown(f"🏢 **{sender}** *({m.get('timestamp','')})*:\n> {msg}")
+            
+            st.divider()
+            
+            # Customer message input & proof upload
+            with st.form("customer_chat_form", clear_on_submit=True):
+                cust_input_msg = st.text_input("Type message / reply here...", key="cust_chat_input")
+                cust_proof_file = st.file_uploader("Upload Payment Receipt / Screenshot (Optional)", type=["png", "jpg", "jpeg"])
+                
+                if st.form_submit_button("📤 Send Message / Upload Payment Proof"):
+                    if cust_input_msg.strip() or cust_proof_file is not None:
+                        proof_url = upload_image_to_cloudinary(cust_proof_file, folder="sammyreks_payment_proofs") if cust_proof_file else None
                         
-                        if any("Quoted" in str(o['status']) for o in ord_group):
-                            st.markdown("---")
-                            st.info(
-                                f"💡 **Staff Audited Quote & Payment Instructions**\n\n"
-                                f"Please review the item availability and substitutes above.\n"
-                                f"When ready, transfer **₦{b_total:,.2f}** to our store account:\n"
-                                f"🏦 **Bank:** Moniepoint MFB\n"
-                                f"🔢 **Account Number:** 8140325192\n"
-                                f"👤 **Account Name:** Sammyreks Business Center\n"
-                                f"📝 **Reference Note (Must Include):** `{pay_ref}`\n\n"
-                                f"Upload your payment receipt/screenshot below once transfer is done."
-                            )
+                        full_msg = cust_input_msg.strip()
+                        if proof_url:
+                            full_msg += "\n[Payment Proof Image Attached]"
                             
-                            proof_file = st.file_uploader("Upload Transfer Receipt (Image/Screenshot)", type=["png", "jpg", "jpeg"], key=f"proof_up_{batch_ts}")
-                            
-                            if st.button(f"🚀 Submit Payment Proof for Verification [{pay_ref}]", key=f"cust_proof_btn_{batch_ts}"):
-                                if proof_file is not None:
-                                    uploaded_proof_url = upload_image_to_cloudinary(proof_file, folder="sammyreks_payment_proofs")
-                                    if uploaded_proof_url:
-                                        for o in ord_group:
-                                            supabase.table("orders").update({
-                                                "status": "Payment Submitted - Pending Staff Verification",
-                                                "proof_url": uploaded_proof_url
-                                            }).eq("id", int(o['id'])).execute()
-                                        st.success(f"✅ Payment proof uploaded successfully for Ref `{pay_ref}`! Staff will review and unlock your official receipt.")
-                                        st.rerun()
-                                    else:
-                                        st.error("Failed to upload image. Please try again.")
-                                else:
-                                    st.warning("Please attach your payment screenshot or receipt before submitting.")
+                        # Insert message
+                        supabase.table("messages").insert({
+                            "sender": "Customer",
+                            "customer_phone": c_chat_phone.strip(),
+                            "customer_name": c_chat_name.strip() or "Customer",
+                            "message": full_msg,
+                            "proof_url": proof_url,
+                            "timestamp": get_now()
+                        }).execute()
                         
-                        elif primary_status == "Completed / Paid":
-                            st.success("🎉 Payment verified successfully! Your transaction is complete.")
-            else:
-                st.info("No orders found for this phone number.")
+                        # If proof was uploaded, also update order status so staff sees it ready for verification
+                        if proof_url:
+                            supabase.table("orders").update({"status": "Payment Submitted - Pending Verification"}).eq("contact_phone", c_chat_phone.strip()).execute()
+                            
+                        st.success("Message sent!")
+                        st.rerun()
 
-st.sidebar.caption(f"{store_title} v16.4 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v17.0 | {date.today().year}")
