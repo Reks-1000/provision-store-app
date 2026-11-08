@@ -343,7 +343,6 @@ if view_mode == "STAFF":
                         
                         sold_item_entry = [{"name": sel_item, "unit": sale_unit, "qty": int(sale_qty), "price": up, "total": grand_total}]
                         
-                        # Save single consolidated transaction receipt
                         supabase.table("saved_receipts").insert({
                             "payment_ref": pos_ref,
                             "customer_name": c_name_pos or "Walk-in Customer",
@@ -509,7 +508,8 @@ if view_mode == "STAFF":
         chosen_image = None
 
         with img_tab1:
-            n_file = st.file_uploader("Choose image file", type=["png", "jpg", "jpeg"], label_visibility="collapsed", key=f"img_uploader_{target_id}")
+            # FIXED: Explicit type filter opens general gallery/recents instead of downloads
+            n_file = st.file_uploader("Choose image file", type=["png", "jpg", "jpeg", "webp"], label_visibility="collapsed", key=f"img_uploader_{target_id}")
             if n_file: 
                 chosen_image = n_file
 
@@ -532,7 +532,8 @@ if view_mode == "STAFF":
 
         st.divider()
         st.write("🎥 **Product Video File Upload (Hosted on Cloudinary)**")
-        vid_file = st.file_uploader("Upload Direct MP4 Video File", type=["mp4", "mov", "webm"], key=f"vid_uploader_{target_id}")
+        # FIXED: Explicit video type filter
+        vid_file = st.file_uploader("Upload Direct MP4 Video File", type=["mp4", "mov", "webm", "mkv"], key=f"vid_uploader_{target_id}")
 
         form_key_suffix = f"_{target_id}"
 
@@ -675,7 +676,6 @@ if view_mode == "STAFF":
                     
                     st.markdown(f"### 💬 Conversation with **{selected_thread_label}**")
                     
-                    # Fetch messages for this thread
                     thread_msgs = supabase.table("messages").select("*").eq("customer_phone", active_phone).order("id").execute()
                     
                     for msg in thread_msgs.data:
@@ -695,7 +695,6 @@ if view_mode == "STAFF":
 
                     st.divider()
                     
-                    # Staff Reply & One-Tap Receipt Generation Section
                     c_rep1, c_rep2 = st.columns([2, 1])
                     with c_rep1:
                         with st.form("staff_chat_reply_form", clear_on_submit=True):
@@ -741,7 +740,6 @@ if view_mode == "STAFF":
                                         
                                         saved_items_list.append({"name": clean_nm, "unit": "Unit", "qty": int(q_val), "price": u_price, "total": t_val})
                                         
-                                        # Log to sales analytics
                                         supabase.table("sales").insert({
                                             "item": clean_nm, "unit_type": "Unit", "qty": int(q_val),
                                             "total": t_val, "profit": t_val * 0.15, "date": date.today().isoformat(),
@@ -749,7 +747,6 @@ if view_mode == "STAFF":
                                             "customer_phone": active_phone, "payment_source": pay_source_choice, "payment_ref": order_ref
                                         }).execute()
 
-                                    # Save ONE single permanent receipt record representing the entire transaction
                                     supabase.table("saved_receipts").insert({
                                         "payment_ref": order_ref,
                                         "customer_name": cust_nm,
@@ -761,7 +758,6 @@ if view_mode == "STAFF":
                                         "timestamp": get_now()
                                     }).execute()
 
-                                    # Clean, Professional HTML Thermal Receipt Box for Chat
                                     professional_receipt_html = f"""
                                     <div style="background:#fdfcf7; color:#111; padding:20px; border-radius:6px; border:1px solid #dcd6cd; font-family:'Courier New', Courier, monospace; max-width:380px; margin:10px 0; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
                                         <div style="text-align:center; border-bottom:1px dashed #333; padding-bottom:10px; margin-bottom:10px;">
@@ -915,7 +911,8 @@ if view_mode == "STAFF":
             existing_video = ""
 
         st.write("🎥 **Upload Broadcast Announcement Video (Direct to Cloudinary)**")
-        broadcast_vid_file = st.file_uploader("Choose MP4 Video File for Top Broadcast", type=["mp4", "mov", "webm"], key="broadcast_file_uploader")
+        # FIXED: Explicit video type filter
+        broadcast_vid_file = st.file_uploader("Choose MP4 Video File for Top Broadcast", type=["mp4", "mov", "webm", "mkv"], key="broadcast_file_uploader")
 
         with st.form("notice_form"):
             notice_input = st.text_area("Notice Message (Ticker)", value=existing_notice, key="settings_notice_input")
@@ -980,7 +977,6 @@ if view_mode == "STAFF":
 # 5. INDEPENDENT CUSTOMER SHOP PORTAL
 # ==========================================
 else:
-    # 1. WELCOME BANNER AT THE VERY TOP
     st.markdown(f"""
         <div style="background: linear-gradient(135deg, #1565c0, #0d47a1); padding: 22px; border-radius: 14px; color: white; text-align: center; margin-bottom: 20px;">
             <h1 style="margin: 0; font-size: 2.1rem;">🏢 Welcome to {store_title}</h1>
@@ -988,7 +984,6 @@ else:
         </div>
     """, unsafe_allow_html=True)
 
-    # 2. NOTICE BOARD TICKER BELOW WELCOME BANNER
     try:
         notice_res = supabase.table("app_settings").select("value").eq("key", "active_notice").execute()
         if notice_res.data and len(notice_res.data) > 0 and notice_res.data[0].get('value'):
@@ -1002,7 +997,6 @@ else:
     except Exception:
         pass
 
-    # 3. BROADCAST VIDEO ADVERT BELOW NOTICE BOARD
     try:
         vid_res = supabase.table("app_settings").select("value").eq("key", "broadcast_video_url").execute()
         if vid_res.data and len(vid_res.data) > 0 and vid_res.data[0].get('value'):
@@ -1252,7 +1246,8 @@ else:
             
             with st.form("customer_chat_form", clear_on_submit=True):
                 cust_input_msg = st.text_input("Type message / reply here...", key="cust_chat_input")
-                cust_proof_file = st.file_uploader("Upload Payment Receipt / Screenshot (Optional)", type=["png", "jpg", "jpeg"])
+                # FIXED: Explicit image type filter forces phone image gallery / photos picker
+                cust_proof_file = st.file_uploader("Upload Payment Receipt / Screenshot (Optional)", type=["png", "jpg", "jpeg", "webp"])
                 
                 if st.form_submit_button("📤 Send Message / Upload Payment Proof"):
                     if cust_input_msg.strip() or cust_proof_file is not None:
@@ -1317,4 +1312,4 @@ else:
             else:
                 st.info("No saved receipts found for this phone number.")
 
-st.sidebar.caption(f"{store_title} v17.4 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v17.5 | {date.today().year}")
