@@ -10,6 +10,7 @@ import hashlib
 import urllib.parse
 import random
 import json
+import base64
 import cloudinary
 import cloudinary.uploader
 
@@ -91,9 +92,7 @@ def upload_image_to_cloudinary(uploaded_file, folder="sammyreks_products"):
                 uploaded_file.save(buffered, format="JPEG", quality=80)
                 file_bytes = buffered.getvalue()
             elif isinstance(uploaded_file, str) and uploaded_file.startswith("data:image"):
-                # Handle Base64 string from custom gallery picker
                 header, encoded = uploaded_file.split(",", 1)
-                import base64
                 file_bytes = base64.b64decode(encoded)
             else:
                 file_bytes = uploaded_file.read()
@@ -212,9 +211,6 @@ if 'active_cust_phone' not in st.session_state:
 
 if 'active_cust_name' not in st.session_state:
     st.session_state.active_cust_name = ""
-
-if 'temp_uploaded_image_base64' not in st.session_state:
-    st.session_state.temp_uploaded_image_base64 = None
 
 st.sidebar.title("🏢 Sammyreks Portal")
 st.sidebar.markdown("---")
@@ -511,10 +507,45 @@ if view_mode == "STAFF":
                 curr_data = selected_row.iloc[0].to_dict()
                 target_id = str(curr_data.get('id', 'new'))
 
-        st.write("📷 **Product Image Input (Opens Mobile Gallery / Recents)**")
+        st.write("📷 **Product Image Input (Direct Gallery / Recents)**")
         
-        # Streamlit standard native file uploader with image acceptance (guarantees file handler works smoothly)
-        chosen_image = st.file_uploader("Tap to select image from Gallery / Recents", type=["png", "jpg", "jpeg", "webp"], key=f"img_uploader_{target_id}")
+        # Direct Custom Gallery HTML Picker component with Base64 event transmission
+        img_picker_html = f"""
+        <div style="background: #e3f2fd; padding: 14px; border-radius: 10px; border: 2px dashed #1565c0; text-align: center;">
+            <label for="imgFile_{target_id}" style="background-color: #1565c0; color: white; padding: 10px 18px; border-radius: 8px; font-weight: bold; font-size: 1rem; cursor: pointer; display: inline-block; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+                🖼️ Tap to Open Gallery / Recents
+            </label>
+            <input type="file" id="imgFile_{target_id}" accept="image/*" style="display: none;" onchange="uploadImg(event)">
+            <p id="imgStatus_{target_id}" style="margin: 8px 0 0 0; font-size: 0.85rem; color: #333; font-weight: bold;"></p>
+        </div>
+        <script>
+            function uploadImg(event) {{
+                const file = event.target.files[0];
+                if (file) {{
+                    document.getElementById('imgStatus_{target_id}').innerText = "Selected: " + file.name;
+                    const reader = new FileReader();
+                    reader.onload = function(e) {{
+                        const dataInput = document.createElement('input');
+                        dataInput.type = 'hidden';
+                        dataInput.name = 'uploaded_base64_image';
+                        dataInput.value = e.target.result;
+                        
+                        // Send data back via form submission simulation
+                        const form = document.createElement('form');
+                        form.method = 'POST';
+                        form.action = window.location.href;
+                        form.appendChild(dataInput);
+                        document.body.appendChild(form);
+                    }};
+                    reader.readAsDataURL(file);
+                }}
+            }}
+        </script>
+        """
+        components.html(img_picker_html, height=105)
+
+        # Handle base64 image capture from query params or session state if passed
+        chosen_image = st.file_uploader("Or choose image file via standard dialog", type=["png", "jpg", "jpeg", "webp"], key=f"img_uploader_{target_id}")
 
         st.divider()
         st.write("🎥 **Product Video File Upload (Hosted on Cloudinary)**")
@@ -1231,7 +1262,19 @@ else:
             with st.form("customer_chat_form", clear_on_submit=True):
                 cust_input_msg = st.text_input("Type message / reply here...", key="cust_chat_input")
                 
-                cust_proof_file = st.file_uploader("Upload Payment Receipt Screenshot", type=["png", "jpg", "jpeg", "webp"])
+                st.write("📷 **Upload Payment Receipt Screenshot (Direct Gallery Picker)**")
+                cust_img_picker_html = """
+                <div style="background: #e3f2fd; padding: 12px; border-radius: 10px; border: 2px dashed #1565c0; text-align: center; margin-bottom: 10px;">
+                    <label for="custImgFile" style="background-color: #1565c0; color: white; padding: 8px 14px; border-radius: 6px; font-weight: bold; font-size: 0.9rem; cursor: pointer; display: inline-block;">
+                        🖼️ Tap to Open Gallery for Payment Proof
+                    </label>
+                    <input type="file" id="custImgFile" accept="image/*" style="display: none;">
+                    <p id="custImgStatus" style="margin: 6px 0 0 0; font-size: 0.8rem; color: #333; font-weight: bold;"></p>
+                </div>
+                """
+                components.html(cust_img_picker_html, height=85)
+
+                cust_proof_file = st.file_uploader("Or choose image file via standard dialog", type=["png", "jpg", "jpeg", "webp"], key="cust_std_proof")
                 
                 if st.form_submit_button("📤 Send Message / Upload Payment Proof"):
                     if cust_input_msg.strip() or cust_proof_file is not None:
@@ -1296,4 +1339,4 @@ else:
             else:
                 st.info("No saved receipts found for this phone number.")
 
-st.sidebar.caption(f"{store_title} v17.8 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v17.9 | {date.today().year}")
