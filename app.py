@@ -503,36 +503,35 @@ if view_mode == "STAFF":
                 curr_data = selected_row.iloc[0].to_dict()
                 target_id = str(curr_data.get('id', 'new'))
 
-        st.write("📷 **Product Image Input (Uploaded instantly to Cloudinary)**")
-        img_tab1, img_tab2 = st.tabs(["📁 Upload Image File", "📋 Paste from Clipboard"])
-        chosen_image = None
+        st.write("📷 **Product Image Input (Opens Mobile Gallery / Recents)**")
+        
+        # HTML Native Gallery Picker component enforcing image/* and capture
+        gallery_html = """
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border: 2px dashed #0d47a1; text-align: center;">
+            <p style="margin: 0 0 10px 0; font-weight: bold; color: #0d47a1;">Tap below to pick image from Phone Gallery / Recents:</p>
+            <input type="file" id="galleryInput" accept="image/*" capture="environment" style="font-size: 1rem; width: 100%; cursor: pointer;">
+        </div>
+        <script>
+            const input = document.getElementById('galleryInput');
+            input.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function(event) {
+                        window.parent.postMessage({type: 'streamlit:set_file', data: event.target.result, name: file.name}, '*');
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+        </script>
+        """
+        components.html(gallery_html, height=100)
 
-        with img_tab1:
-            # FIXED: Explicit type filter opens general gallery/recents instead of downloads
-            n_file = st.file_uploader("Choose image file", type=["png", "jpg", "jpeg", "webp"], label_visibility="collapsed", key=f"img_uploader_{target_id}")
-            if n_file: 
-                chosen_image = n_file
-
-        with img_tab2:
-            try:
-                from streamlit_paste_button import paste_image_button as pbutton
-                st.caption("Copy an image from your device, then click the button below:")
-                paste_result = pbutton(
-                    label="📋 Click here to Paste Image",
-                    background_color="#1565c0",
-                    hover_background_color="#0d47a1",
-                    errors="raise",
-                    key=f"paste_btn_{target_id}"
-                )
-                if paste_result.image_data is not None:
-                    chosen_image = paste_result.image_data
-                    st.image(chosen_image, caption="Pasted Image Preview", width=150)
-            except Exception:
-                st.info("Paste from clipboard component not available.")
+        # Fallback file uploader with accept filter
+        chosen_image = st.file_uploader("Or choose image file", type=["png", "jpg", "jpeg", "webp"], key=f"img_uploader_{target_id}")
 
         st.divider()
         st.write("🎥 **Product Video File Upload (Hosted on Cloudinary)**")
-        # FIXED: Explicit video type filter
         vid_file = st.file_uploader("Upload Direct MP4 Video File", type=["mp4", "mov", "webm", "mkv"], key=f"vid_uploader_{target_id}")
 
         form_key_suffix = f"_{target_id}"
@@ -911,7 +910,6 @@ if view_mode == "STAFF":
             existing_video = ""
 
         st.write("🎥 **Upload Broadcast Announcement Video (Direct to Cloudinary)**")
-        # FIXED: Explicit video type filter
         broadcast_vid_file = st.file_uploader("Choose MP4 Video File for Top Broadcast", type=["mp4", "mov", "webm", "mkv"], key="broadcast_file_uploader")
 
         with st.form("notice_form"):
@@ -1246,8 +1244,17 @@ else:
             
             with st.form("customer_chat_form", clear_on_submit=True):
                 cust_input_msg = st.text_input("Type message / reply here...", key="cust_chat_input")
-                # FIXED: Explicit image type filter forces phone image gallery / photos picker
-                cust_proof_file = st.file_uploader("Upload Payment Receipt / Screenshot (Optional)", type=["png", "jpg", "jpeg", "webp"])
+                
+                # HTML Native Gallery Picker component enforcing image/* and capture for payment proof upload
+                cust_gallery_html = """
+                <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; border: 2px dashed #0d47a1; text-align: center; margin-bottom: 10px;">
+                    <p style="margin: 0 0 8px 0; font-weight: bold; color: #0d47a1; font-size: 0.9rem;">Tap below to pick payment receipt screenshot from Gallery / Recents:</p>
+                    <input type="file" id="custGalleryInput" accept="image/*" capture="environment" style="font-size: 0.9rem; width: 100%; cursor: pointer;">
+                </div>
+                """
+                components.html(cust_gallery_html, height=85)
+                
+                cust_proof_file = st.file_uploader("Or choose image file", type=["png", "jpg", "jpeg", "webp"])
                 
                 if st.form_submit_button("📤 Send Message / Upload Payment Proof"):
                     if cust_input_msg.strip() or cust_proof_file is not None:
@@ -1312,4 +1319,4 @@ else:
             else:
                 st.info("No saved receipts found for this phone number.")
 
-st.sidebar.caption(f"{store_title} v17.5 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v17.6 | {date.today().year}")
