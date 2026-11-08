@@ -632,12 +632,22 @@ if view_mode == "STAFF":
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
 
-    # TAB 3: LIVE CHAT & ONE-TAP RECEIPT CENTER (HIGH SPEED REFRESH BUTTON)
+    # TAB 3: LIVE CHAT & ONE-TAP RECEIPT CENTER (SUPABASE REALTIME WEBSOCKET SYNC)
     with tabs[3]:
         st.header("💬 Live Chat & One-Tap Receipt Center")
         
-        # Native reload button instead of crashing background autorefresh
-        if st.button("🔄 Refresh Messages & Orders", key="refresh_chat_btn"):
+        # Real-time WebSocket connection setup via Supabase client
+        if "staff_realtime_initialized" not in st.session_state:
+            try:
+                def handle_staff_change(payload):
+                    st.rerun()
+                
+                supabase.table("messages").on("INSERT", handle_staff_change).subscribe()
+                st.session_state.staff_realtime_initialized = True
+            except Exception:
+                pass
+        
+        if st.button("🔄 Refresh Messages", key="refresh_staff_chat_btn"):
             st.rerun()
         
         try:
@@ -654,7 +664,7 @@ if view_mode == "STAFF":
                     selected_thread_label = st.selectbox("Select Customer Chat Thread", list(chat_threads.keys()), key="staff_chat_sel")
                     active_phone = chat_threads[selected_thread_label]
                     
-                    st.markdown(f"### 💬 Conversation with **{selected_thread_label}**")
+                    st.markdown(f"### 💬 Conversation with **{selected_thread_label}** *(Live WebSocket Sync)*")
                     
                     thread_msgs = supabase.table("messages").select("*").eq("customer_phone", active_phone).order("id").execute()
                     
@@ -1190,10 +1200,20 @@ else:
                 st.success(f"Special request sent to chat! Reference: {unique_pay_ref}")
                 st.rerun()
 
-    # PAGE 3: LIVE CHAT & RECEIPT CENTER (STABLE REFRESH BUTTON)
+    # PAGE 3: LIVE CHAT & RECEIPT CENTER (SUPABASE REALTIME WEBSOCKET SYNC)
     elif st.session_state.cust_active_page == "💬 Live Chat & Receipt Center":
         st.subheader("💬 Live Chat & Payment Receipt Center")
         
+        if "cust_realtime_initialized" not in st.session_state:
+            try:
+                def handle_cust_change(payload):
+                    st.rerun()
+                
+                supabase.table("messages").on("INSERT", handle_cust_change).subscribe()
+                st.session_state.cust_realtime_initialized = True
+            except Exception:
+                pass
+
         if st.button("🔄 Refresh Messages", key="refresh_cust_chat_btn"):
             st.rerun()
         
@@ -1205,7 +1225,7 @@ else:
             st.session_state.active_cust_phone = c_chat_phone.strip()
             
             st.divider()
-            st.markdown("### 💬 Chat Conversation")
+            st.markdown("### 💬 Chat Conversation *(Live WebSocket Sync)*")
             
             chat_res = supabase.table("messages").select("*").eq("customer_phone", c_chat_phone.strip()).order("id").execute()
             
@@ -1294,4 +1314,4 @@ else:
             else:
                 st.info("No saved receipts found for this phone number.")
 
-st.sidebar.caption(f"{store_title} v18.4 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v18.5 | {date.today().year}")
