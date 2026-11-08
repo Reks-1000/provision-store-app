@@ -12,6 +12,7 @@ import json
 import base64
 import cloudinary
 import cloudinary.uploader
+from streamlit_autorefresh import st_autorefresh
 
 # ==========================================
 # 1. DATABASE & STORAGE INITIALIZATION
@@ -59,7 +60,7 @@ try:
 except Exception:
     pass
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=120)
 def fetch_dataframe_cached(table_name):
     try:
         response = supabase.table(table_name).select("*").execute()
@@ -175,14 +176,13 @@ st.markdown("""
         .stButton>button {
             font-size: 1.15rem !important;
             font-weight: bold !important;
-            padding: 12px 16px !important;
-            border-radius: 10px !important;
-            margin-bottom: 5px !important;
+            padding: 10px 14px !important;
+            border-radius: 8px !important;
+            margin-bottom: 3px !important;
         }
         div[data-baseweb="tab"] {
-            font-size: 1.15rem !important;
+            font-size: 1.1rem !important;
             font-weight: bold !important;
-            padding: 10px 14px !important;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -631,9 +631,12 @@ if view_mode == "STAFF":
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
 
-    # TAB 3: LIVE CHAT & ONE-TAP RECEIPT CENTER
+    # TAB 3: LIVE CHAT & ONE-TAP RECEIPT CENTER (HIGH SPEED SYNC)
     with tabs[3]:
         st.header("💬 Live Chat & One-Tap Receipt Center")
+        
+        # Optimized auto-refresh every 5 seconds specifically for the active chat thread
+        st_autorefresh(interval=5000, limit=None, key="staff_chat_fast_sync")
         
         try:
             res_msg = supabase.table("messages").select("customer_phone, customer_name").execute()
@@ -649,7 +652,7 @@ if view_mode == "STAFF":
                     selected_thread_label = st.selectbox("Select Customer Chat Thread", list(chat_threads.keys()), key="staff_chat_sel")
                     active_phone = chat_threads[selected_thread_label]
                     
-                    st.markdown(f"### 💬 Conversation with **{selected_thread_label}**")
+                    st.markdown(f"### 💬 Conversation with **{selected_thread_label}** *(Instant Sync)*")
                     
                     thread_msgs = supabase.table("messages").select("*").eq("customer_phone", active_phone).order("id").execute()
                     
@@ -1185,9 +1188,12 @@ else:
                 st.success(f"Special request sent to chat! Reference: {unique_pay_ref}")
                 st.rerun()
 
-    # PAGE 3: LIVE CHAT & RECEIPT CENTER
+    # PAGE 3: LIVE CHAT & RECEIPT CENTER (HIGH SPEED SYNC)
     elif st.session_state.cust_active_page == "💬 Live Chat & Receipt Center":
         st.subheader("💬 Live Chat & Payment Receipt Center")
+        
+        # Optimized auto-refresh every 5 seconds specifically for customer chat sync
+        st_autorefresh(interval=5000, limit=None, key="cust_chat_fast_sync")
         
         c_chat_name = st.text_input("Your Full Name", value=st.session_state.active_cust_name, key="cust_chat_name")
         c_chat_phone = normalize_phone(st.text_input("Your Phone Number", value=st.session_state.active_cust_phone, key="cust_chat_phone"))
@@ -1197,7 +1203,7 @@ else:
             st.session_state.active_cust_phone = c_chat_phone.strip()
             
             st.divider()
-            st.markdown("### 💬 Chat Conversation")
+            st.markdown("### 💬 Chat Conversation *(Instant Sync)*")
             
             chat_res = supabase.table("messages").select("*").eq("customer_phone", c_chat_phone.strip()).order("id").execute()
             
@@ -1286,4 +1292,4 @@ else:
             else:
                 st.info("No saved receipts found for this phone number.")
 
-st.sidebar.caption(f"{store_title} v18.0 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v18.2 | {date.today().year}")
