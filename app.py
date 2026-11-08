@@ -505,29 +505,31 @@ if view_mode == "STAFF":
 
         st.write("📷 **Product Image Input (Opens Mobile Gallery / Recents)**")
         
-        # HTML Native Gallery Picker component enforcing image/* and capture
-        gallery_html = """
-        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border: 2px dashed #0d47a1; text-align: center;">
-            <p style="margin: 0 0 10px 0; font-weight: bold; color: #0d47a1;">Tap below to pick image from Phone Gallery / Recents:</p>
-            <input type="file" id="galleryInput" accept="image/*" capture="environment" style="font-size: 1rem; width: 100%; cursor: pointer;">
+        # Direct Mobile Gallery HTML File Input Trigger (forces Android picker/recents gallery)
+        native_gallery_html = """
+        <div style="background: #e3f2fd; padding: 14px; border-radius: 10px; border: 2px solid #1565c0; text-align: center; margin-bottom: 10px;">
+            <label for="nativeImagePicker" style="background-color: #1565c0; color: white; padding: 10px 18px; border-radius: 8px; font-weight: bold; font-size: 1rem; cursor: pointer; display: inline-block; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+                🖼️ Tap to Open Gallery / Recents
+            </label>
+            <input type="file" id="nativeImagePicker" accept="image/*" style="display: none;" onchange="handleFileSelect(event)">
+            <p id="selectedFileName" style="margin: 8px 0 0 0; font-size: 0.85rem; color: #333; font-weight: bold;"></p>
         </div>
         <script>
-            const input = document.getElementById('galleryInput');
-            input.addEventListener('change', (e) => {
-                const file = e.target.files[0];
+            function handleFileSelect(event) {
+                const file = event.target.files[0];
                 if (file) {
+                    document.getElementById('selectedFileName').innerText = "Selected: " + file.name;
                     const reader = new FileReader();
-                    reader.onload = function(event) {
-                        window.parent.postMessage({type: 'streamlit:set_file', data: event.target.result, name: file.name}, '*');
+                    reader.onload = function(e) {
+                        window.parent.postMessage({type: 'streamlit:upload_image', base64: e.target.result, name: file.name}, '*');
                     };
                     reader.readAsDataURL(file);
                 }
-            });
+            }
         </script>
         """
-        components.html(gallery_html, height=100)
+        components.html(native_gallery_html, height=110)
 
-        # Fallback file uploader with accept filter
         chosen_image = st.file_uploader("Or choose image file", type=["png", "jpg", "jpeg", "webp"], key=f"img_uploader_{target_id}")
 
         st.divider()
@@ -1245,14 +1247,30 @@ else:
             with st.form("customer_chat_form", clear_on_submit=True):
                 cust_input_msg = st.text_input("Type message / reply here...", key="cust_chat_input")
                 
-                # HTML Native Gallery Picker component enforcing image/* and capture for payment proof upload
-                cust_gallery_html = """
-                <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; border: 2px dashed #0d47a1; text-align: center; margin-bottom: 10px;">
-                    <p style="margin: 0 0 8px 0; font-weight: bold; color: #0d47a1; font-size: 0.9rem;">Tap below to pick payment receipt screenshot from Gallery / Recents:</p>
-                    <input type="file" id="custGalleryInput" accept="image/*" capture="environment" style="font-size: 0.9rem; width: 100%; cursor: pointer;">
+                # Direct Mobile Gallery HTML File Input Trigger for customer payment proof
+                cust_native_gallery_html = """
+                <div style="background: #e3f2fd; padding: 12px; border-radius: 10px; border: 2px solid #1565c0; text-align: center; margin-bottom: 10px;">
+                    <label for="custImagePicker" style="background-color: #1565c0; color: white; padding: 8px 14px; border-radius: 6px; font-weight: bold; font-size: 0.9rem; cursor: pointer; display: inline-block;">
+                        🖼️ Tap to Open Gallery for Payment Proof
+                    </label>
+                    <input type="file" id="custImagePicker" accept="image/*" style="display: none;" onchange="handleCustFile(event)">
+                    <p id="custFileName" style="margin: 6px 0 0 0; font-size: 0.8rem; color: #333; font-weight: bold;"></p>
                 </div>
+                <script>
+                    function handleCustFile(event) {
+                        const file = event.target.files[0];
+                        if (file) {
+                            document.getElementById('custFileName').innerText = "Selected: " + file.name;
+                            const reader = new FileReader();
+                            reader.onload = function(e) {
+                                window.parent.postMessage({type: 'streamlit:upload_image', base64: e.target.result, name: file.name}, '*');
+                            };
+                            reader.readAsDataURL(file);
+                        }
+                    }
+                </script>
                 """
-                components.html(cust_gallery_html, height=85)
+                components.html(cust_native_gallery_html, height=95)
                 
                 cust_proof_file = st.file_uploader("Or choose image file", type=["png", "jpg", "jpeg", "webp"])
                 
@@ -1319,4 +1337,4 @@ else:
             else:
                 st.info("No saved receipts found for this phone number.")
 
-st.sidebar.caption(f"{store_title} v17.6 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v17.7 | {date.today().year}")
