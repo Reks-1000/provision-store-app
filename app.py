@@ -218,11 +218,14 @@ if not st.session_state.auth["logged_in"]:
         with st.sidebar.form("login_form"):
             user_input = st.text_input("Username", key="login_user").strip()
             pass_input = st.text_input("Password", type="password", key="login_pass").strip()
-            if st.form_submit_button("Login"):
+            login_submitted = st.form_submit_button("Login")
+            
+            if login_submitted:
                 if not user_input or not pass_input:
                     st.error("Please enter both Username and Password.")
                 else:
                     try:
+                        # Instant hardcoded check for admin
                         if user_input.lower() == "admin" and pass_input == "Sammyreks2026!":
                             st.session_state.auth = {
                                 "logged_in": True, 
@@ -233,7 +236,8 @@ if not st.session_state.auth["logged_in"]:
                             st.rerun()
                         else:
                             hashed_attempt = hash_password(pass_input)
-                            res = supabase.table("workers").select("role, name").ilike("name", user_input).eq("password", hashed_attempt).execute()
+                            # Optimized indexed query lookup
+                            res = supabase.table("workers").select("role, name").ilike("name", user_input).eq("password", hashed_attempt).limit(1).execute()
                             if res.data and len(res.data) > 0:
                                 matched_user = res.data[0]
                                 st.session_state.auth = {
@@ -635,7 +639,6 @@ if view_mode == "STAFF":
     with tabs[3]:
         st.header("💬 Live Chat & One-Tap Receipt Center")
         
-        # Optimized auto-refresh every 5 seconds specifically for the active chat thread
         st_autorefresh(interval=5000, limit=None, key="staff_chat_fast_sync")
         
         try:
@@ -1192,7 +1195,6 @@ else:
     elif st.session_state.cust_active_page == "💬 Live Chat & Receipt Center":
         st.subheader("💬 Live Chat & Payment Receipt Center")
         
-        # Optimized auto-refresh every 5 seconds specifically for customer chat sync
         st_autorefresh(interval=5000, limit=None, key="cust_chat_fast_sync")
         
         c_chat_name = st.text_input("Your Full Name", value=st.session_state.active_cust_name, key="cust_chat_name")
@@ -1292,4 +1294,4 @@ else:
             else:
                 st.info("No saved receipts found for this phone number.")
 
-st.sidebar.caption(f"{store_title} v18.2 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v18.3 | {date.today().year}")
