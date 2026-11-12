@@ -19,7 +19,6 @@ import cloudinary.uploader
 # ==========================================
 @st.cache_resource
 def init_connection():
-    # Read from Render environment variables first, fallback to st.secrets if available
     url = os.getenv("SUPABASE_URL") or (st.secrets["SUPABASE_URL"] if "SUPABASE_URL" in st.secrets else None)
     key = os.getenv("SUPABASE_KEY") or (st.secrets["SUPABASE_KEY"] if "SUPABASE_KEY" in st.secrets else None)
     
@@ -34,7 +33,7 @@ except Exception as e:
     st.error(f"Database connection failed: {e}")
     st.stop()
 
-# Initialize Cloudinary Configuration (Strictly for ALL Images and Videos)
+# Initialize Cloudinary Configuration
 try:
     cloudinary.config(
         cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME") or (st.secrets["CLOUDINARY_CLOUD_NAME"] if "CLOUDINARY_CLOUD_NAME" in st.secrets else None),
@@ -43,7 +42,8 @@ try:
         secure=True
     )
 except Exception as e:
-    st.error(f"Cloudinary configuration missing from environment or secrets! Error: {e}")
+    st.error(f"Cloudinary configuration missing! Error: {e}")
+
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
@@ -52,7 +52,7 @@ def normalize_phone(phone: str) -> str:
         return ""
     return "".join(c for c in phone if c.isdigit() or c == '+').strip()
 
-# AUTO-INITIALIZE SECURE DEFAULT ADMIN USER IF WORKERS TABLE IS EMPTY
+# AUTO-INITIALIZE DEFAULT ADMIN USER IF WORKERS TABLE IS EMPTY
 try:
     check_empty = supabase.table("workers").select("*", count="exact").execute()
     if not check_empty.data:
@@ -64,14 +64,15 @@ try:
 except Exception:
     pass
 
-@st.cache_data(ttl=120)
+# HIGH-PERFORMANCE CACHED FETCH FUNCTIONS (Prevents Lag & Speeds Up UI)
+@st.cache_data(ttl=20)
 def fetch_dataframe_cached(table_name):
     try:
         response = supabase.table(table_name).select("*").execute()
         if response.data and len(response.data) > 0:
             return pd.DataFrame(response.data)
         return pd.DataFrame()
-    except Exception as err:
+    except Exception:
         return pd.DataFrame()
 
 def fetch_dataframe(table_name):
@@ -80,12 +81,9 @@ def fetch_dataframe(table_name):
         if response.data and len(response.data) > 0:
             return pd.DataFrame(response.data)
         return pd.DataFrame()
-    except Exception as err:
+    except Exception:
         return pd.DataFrame()
 
-# ==========================================
-# 2. CLOUDINARY & CORE UTILITY FUNCTIONS
-# ==========================================
 store_title = "Sammyreks Business Center"
 
 def upload_image_to_cloudinary(uploaded_file, folder="sammyreks_products"):
@@ -103,13 +101,13 @@ def upload_image_to_cloudinary(uploaded_file, folder="sammyreks_products"):
                 folder=folder,
                 resource_type="image",
                 transformation=[
-                    {"width": 800, "height": 800, "crop": "limit"},
+                    {"width": 600, "height": 600, "crop": "limit"},
                     {"quality": "auto", "fetch_format": "auto"}
                 ]
             )
             return upload_result.get("secure_url")
         except Exception as e:
-            st.error(f"Cloudinary image upload error: {e}")
+            st.error(f"Cloudinary upload error: {e}")
             return None
     return None
 
@@ -230,11 +228,7 @@ if not st.session_state.auth["logged_in"]:
                 else:
                     try:
                         if user_input.lower() == "admin" and pass_input == "Sammyreks2026!":
-                            st.session_state.auth = {
-                                "logged_in": True, 
-                                "user": "admin", 
-                                "role": "CEO"
-                            }
+                            st.session_state.auth = {"logged_in": True, "user": "admin", "role": "CEO"}
                             st.success("Welcome back, admin!")
                             st.rerun()
                         else:
@@ -242,11 +236,7 @@ if not st.session_state.auth["logged_in"]:
                             res = supabase.table("workers").select("role, name").ilike("name", user_input).eq("password", hashed_attempt).limit(1).execute()
                             if res.data and len(res.data) > 0:
                                 matched_user = res.data[0]
-                                st.session_state.auth = {
-                                    "logged_in": True, 
-                                    "user": matched_user['name'], 
-                                    "role": matched_user['role']
-                                }
+                                st.session_state.auth = {"logged_in": True, "user": matched_user['name'], "role": matched_user['role']}
                                 st.success(f"Welcome back, {matched_user['name']}!")
                                 st.rerun()
                             else:
@@ -272,23 +262,17 @@ if view_mode == "STAFF":
     st.title(f"🏢 Dashboard: {store_title}")
 
     tab_titles = [
-        "📊 Dashboard", 
-        "💳 POS & Sales", 
-        "📦 Inventory", 
-        "💬 Live Chat & One-Tap Receipt Center", 
-        "📜 Saved Receipts Vault", 
-        "📓 Debtors", 
-        "⚙️ Settings", 
-        "💸 Expenses", 
-        "👥 Workers"
+        "📊 Dashboard", "💳 POS & Sales", "📦 Inventory", 
+        "💬 Live Chat & One-Tap Receipt Center", "📜 Saved Receipts Vault", 
+        "📓 Debtors", "⚙️ Settings", "💸 Expenses", "👥 Workers"
     ]
     tabs = st.tabs(tab_titles)
 
     # TAB 0: DASHBOARD
     with tabs[0]:
         st.header("📊 Business Analytics")
-        df_s = fetch_dataframe("sales")
-        df_e = fetch_dataframe("expenses")
+        df_s = fetch_dataframe_cached("sales")
+        df_e = fetch_dataframe_cached("expenses")
         
         c1, c2, c3, c4 = st.columns(4)
         total_rev = df_s['total'].sum() if not df_s.empty and 'total' in df_s.columns else 0
@@ -637,22 +621,12 @@ if view_mode == "STAFF":
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
 
-    # TAB 3: LIVE CHAT & ONE-TAP RECEIPT CENTER (SUPABASE REALTIME WEBSOCKET SYNC)
+    # TAB 3: LIVE CHAT & ONE-TAP RECEIPT CENTER
     with tabs[3]:
         st.header("💬 Live Chat & One-Tap Receipt Center")
         
-        # Real-time WebSocket connection setup via Supabase client
-        if "staff_realtime_initialized" not in st.session_state:
-            try:
-                def handle_staff_change(payload):
-                    st.rerun()
-                
-                supabase.table("messages").on("INSERT", handle_staff_change).subscribe()
-                st.session_state.staff_realtime_initialized = True
-            except Exception:
-                pass
-        
         if st.button("🔄 Refresh Messages", key="refresh_staff_chat_btn"):
+            st.cache_data.clear()
             st.rerun()
         
         try:
@@ -669,7 +643,7 @@ if view_mode == "STAFF":
                     selected_thread_label = st.selectbox("Select Customer Chat Thread", list(chat_threads.keys()), key="staff_chat_sel")
                     active_phone = chat_threads[selected_thread_label]
                     
-                    st.markdown(f"### 💬 Conversation with **{selected_thread_label}** *(Live WebSocket Sync)*")
+                    st.markdown(f"### 💬 Conversation with **{selected_thread_label}**")
                     
                     thread_msgs = supabase.table("messages").select("*").eq("customer_phone", active_phone).order("id").execute()
                     
@@ -808,11 +782,9 @@ if view_mode == "STAFF":
         except Exception as chat_err:
             st.error(f"Chat dashboard error: {chat_err}")
 
-    # TAB 4: SAVED RECEIPTS VAULT (BANK-STYLE)
+    # TAB 4: SAVED RECEIPTS VAULT
     with tabs[4]:
         st.header("📜 Saved Receipts Vault (Bank-Style Ledger)")
-        st.caption("All completed purchase transactions are permanently archived here as individual receipts.")
-        
         df_vault = fetch_dataframe("saved_receipts")
         if not df_vault.empty:
             search_vault = st.text_input("🔍 Search by Ref Code or Customer Name/Phone", key="vault_search")
@@ -830,7 +802,6 @@ if view_mode == "STAFF":
                         st.write(f"**Gateway Source:** {r_row['payment_source']}")
                         st.write(f"**Cashier / Staff:** {r_row['cashier']}")
                         st.write(f"**Transaction Timestamp:** {r_row['timestamp']}")
-                        
                         try:
                             items_parsed = json.loads(r_row['items_json'])
                             items_html_vault = "".join([f"<li>{i.get('name')} ({i.get('qty')} x ₦{i.get('price',0):,.2f}) = ₦{i.get('total',0):,.2f}</li>" for i in items_parsed])
@@ -891,8 +862,6 @@ if view_mode == "STAFF":
     # TAB 6: SETTINGS
     with tabs[6]:
         st.header("⚙️ User Settings & Announcements")
-        st.subheader("📌 Notice Board Ticker & Direct Cloudinary Broadcast Video Upload")
-        
         try:
             curr_notice_res = supabase.table("app_settings").select("value").eq("key", "active_notice").execute()
             existing_notice = curr_notice_res.data[0]['value'] if (curr_notice_res.data and len(curr_notice_res.data) > 0) else ""
@@ -931,7 +900,7 @@ if view_mode == "STAFF":
                 st.success("Notice board and broadcast video updated successfully!")
                 st.rerun()
 
-    # TAB 7: EXPENSES (CEO ONLY)
+    # TAB 7: EXPENSES
     with tabs[7]:
         st.header("💸 Expenditure Log")
         if role == "CEO":
@@ -948,7 +917,7 @@ if view_mode == "STAFF":
         else:
             st.warning("⚠️ Access restricted to CEO accounts only.")
 
-    # TAB 8: WORKERS (CEO ONLY)
+    # TAB 8: WORKERS
     with tabs[8]:
         st.header("👥 Staff Management")
         if role == "CEO":
@@ -1205,21 +1174,12 @@ else:
                 st.success(f"Special request sent to chat! Reference: {unique_pay_ref}")
                 st.rerun()
 
-    # PAGE 3: LIVE CHAT & RECEIPT CENTER (SUPABASE REALTIME WEBSOCKET SYNC)
+    # PAGE 3: LIVE CHAT & RECEIPT CENTER
     elif st.session_state.cust_active_page == "💬 Live Chat & Receipt Center":
         st.subheader("💬 Live Chat & Payment Receipt Center")
         
-        if "cust_realtime_initialized" not in st.session_state:
-            try:
-                def handle_cust_change(payload):
-                    st.rerun()
-                
-                supabase.table("messages").on("INSERT", handle_cust_change).subscribe()
-                st.session_state.cust_realtime_initialized = True
-            except Exception:
-                pass
-
         if st.button("🔄 Refresh Messages", key="refresh_cust_chat_btn"):
+            st.cache_data.clear()
             st.rerun()
         
         c_chat_name = st.text_input("Your Full Name", value=st.session_state.active_cust_name, key="cust_chat_name")
@@ -1230,7 +1190,7 @@ else:
             st.session_state.active_cust_phone = c_chat_phone.strip()
             
             st.divider()
-            st.markdown("### 💬 Chat Conversation *(Live WebSocket Sync)*")
+            st.markdown("### 💬 Chat Conversation")
             
             chat_res = supabase.table("messages").select("*").eq("customer_phone", c_chat_phone.strip()).order("id").execute()
             
@@ -1253,7 +1213,6 @@ else:
             
             with st.form("customer_chat_form", clear_on_submit=True):
                 cust_input_msg = st.text_input("Type message / reply here...", key="cust_chat_input")
-                
                 cust_proof_file = st.file_uploader("Upload Payment Receipt Screenshot", type=["png", "jpg", "jpeg", "webp"], key="cust_chat_proof")
                 
                 if st.form_submit_button("📤 Send Message / Upload Payment Proof"):
@@ -1282,8 +1241,6 @@ else:
     # PAGE 4: CUSTOMER SAVED RECEIPTS VAULT
     elif st.session_state.cust_active_page == "📜 My Saved Receipts":
         st.subheader("📜 My Saved Transaction Receipts")
-        st.caption("Review your permanently archived bank-style transaction receipts here.")
-        
         c_vault_phone = normalize_phone(st.text_input("Enter Your Phone Number to View Receipts", value=st.session_state.active_cust_phone, key="cust_vault_phone"))
         
         if c_vault_phone.strip():
@@ -1319,4 +1276,4 @@ else:
             else:
                 st.info("No saved receipts found for this phone number.")
 
-st.sidebar.caption(f"{store_title} v18.5 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v18.6 | {date.today().year}")
