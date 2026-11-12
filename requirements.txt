@@ -1,7 +1,5 @@
-streamlit>=1.38.0
-pandas>=2.0.0
-supabase>=2.3.0
-streamlit-paste-button
-cloudinary>=1.36.0
-streamlit-autorefresh
-realtime-py
+streamlit
+pandas
+supabase
+cloudinary
+Pillow
