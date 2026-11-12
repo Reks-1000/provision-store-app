@@ -10,6 +10,7 @@ import urllib.parse
 import random
 import json
 import base64
+import os
 import cloudinary
 import cloudinary.uploader
 
@@ -18,27 +19,31 @@ import cloudinary.uploader
 # ==========================================
 @st.cache_resource
 def init_connection():
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
+    # Read from Render environment variables first, fallback to st.secrets if available
+    url = os.getenv("SUPABASE_URL") or (st.secrets["SUPABASE_URL"] if "SUPABASE_URL" in st.secrets else None)
+    key = os.getenv("SUPABASE_KEY") or (st.secrets["SUPABASE_KEY"] if "SUPABASE_KEY" in st.secrets else None)
+    
+    if not url or not key:
+        st.error("Database credentials missing! Please configure SUPABASE_URL and SUPABASE_KEY in your Render Environment Variables.")
+        st.stop()
     return create_client(url, key)
 
 try:
     supabase: Client = init_connection()
 except Exception as e:
-    st.error(f"Database connection failed. Please verify Streamlit Cloud Secrets! Error: {e}")
+    st.error(f"Database connection failed: {e}")
     st.stop()
 
-# Initialize Cloudinary Configuration
+# Initialize Cloudinary Configuration (Strictly for ALL Images and Videos)
 try:
     cloudinary.config(
-        cloud_name=st.secrets["CLOUDINARY_CLOUD_NAME"],
-        api_key=st.secrets["CLOUDINARY_API_KEY"],
-        api_secret=st.secrets["CLOUDINARY_API_SECRET"],
+        cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME") or (st.secrets["CLOUDINARY_CLOUD_NAME"] if "CLOUDINARY_CLOUD_NAME" in st.secrets else None),
+        api_key=os.getenv("CLOUDINARY_API_KEY") or (st.secrets["CLOUDINARY_API_KEY"] if "CLOUDINARY_API_KEY" in st.secrets else None),
+        api_secret=os.getenv("CLOUDINARY_API_SECRET") or (st.secrets["CLOUDINARY_API_SECRET"] if "CLOUDINARY_API_SECRET" in st.secrets else None),
         secure=True
     )
 except Exception as e:
-    st.error(f"Cloudinary configuration missing from secrets! Error: {e}")
-
+    st.error(f"Cloudinary configuration missing from environment or secrets! Error: {e}")
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
