@@ -64,8 +64,7 @@ try:
 except Exception:
     pass
 
-# HIGH-PERFORMANCE CACHED FETCH FUNCTIONS (Prevents Lag & Speeds Up UI)
-@st.cache_data(ttl=20)
+@st.cache_data(ttl=15)
 def fetch_dataframe_cached(table_name):
     try:
         response = supabase.table(table_name).select("*").execute()
@@ -621,11 +620,11 @@ if view_mode == "STAFF":
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
 
-    # TAB 3: LIVE CHAT & ONE-TAP RECEIPT CENTER
+    # TAB 3: LIVE CHAT & ONE-TAP RECEIPT CENTER (STABLE & FAST)
     with tabs[3]:
         st.header("💬 Live Chat & One-Tap Receipt Center")
         
-        if st.button("🔄 Refresh Messages", key="refresh_staff_chat_btn"):
+        if st.button("🔄 Refresh Chat & Messages", key="refresh_staff_chat_btn"):
             st.cache_data.clear()
             st.rerun()
         
@@ -1174,11 +1173,11 @@ else:
                 st.success(f"Special request sent to chat! Reference: {unique_pay_ref}")
                 st.rerun()
 
-    # PAGE 3: LIVE CHAT & RECEIPT CENTER
+    # PAGE 3: LIVE CHAT & RECEIPT CENTER (STABLE & FAST)
     elif st.session_state.cust_active_page == "💬 Live Chat & Receipt Center":
         st.subheader("💬 Live Chat & Payment Receipt Center")
         
-        if st.button("🔄 Refresh Messages", key="refresh_cust_chat_btn"):
+        if st.button("🔄 Refresh Chat Messages", key="refresh_cust_chat_btn"):
             st.cache_data.clear()
             st.rerun()
         
@@ -1276,4 +1275,4 @@ else:
             else:
                 st.info("No saved receipts found for this phone number.")
 
-st.sidebar.caption(f"{store_title} v18.6 | {date.today().year}")
+st.sidebar.caption(f"{store_title} v18.7 | {date.today().year}")
