@@ -23,7 +23,7 @@ def init_connection():
     key = os.getenv("SUPABASE_KEY") or (st.secrets["SUPABASE_KEY"] if "SUPABASE_KEY" in st.secrets else None)
     
     if not url or not key:
-        st.error("Database credentials missing! Please configure SUPABASE_URL and SUPABASE_KEY in your Render Environment Variables.")
+        st.error("Database credentials missing! Please configure SUPABASE_URL and SUPABASE_KEY in your Railway Environment Variables.")
         st.stop()
     return create_client(url, key)
 
