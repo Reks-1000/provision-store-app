@@ -23,7 +23,7 @@ def init_connection():
     key = os.getenv("SUPABASE_KEY") or (st.secrets["SUPABASE_KEY"] if "SUPABASE_KEY" in st.secrets else None)
     
     if not url or not key:
-        st.error("Database credentials missing! Please configure SUPABASE_URL and SUPABASE_KEY in your Environment Variables.")
+        st.error("Database credentials missing! Please configure SUPABASE_URL and SUPABASE_KEY in your Render Environment Variables.")
         st.stop()
     return create_client(url, key)
 
@@ -393,7 +393,7 @@ if view_mode == "STAFF":
                             new_qty = float(p['qty_cartons'] - cartons_deducted)
                             supabase.table("products").update({"qty_cartons": new_qty}).eq("id", int(p['id'])).execute()
                             st.cache_data.clear()
-                            
+                                
                             st.warning(f"Debt logged for {c_name_pos}!")
                             st.rerun()
 
@@ -620,7 +620,7 @@ if view_mode == "STAFF":
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
 
-    # TAB 3: LIVE CHAT & ONE-TAP RECEIPT CENTER
+    # TAB 3: LIVE CHAT & ONE-TAP RECEIPT CENTER (STABLE & FAST)
     with tabs[3]:
         st.header("💬 Live Chat & One-Tap Receipt Center")
         
@@ -692,7 +692,7 @@ if view_mode == "STAFF":
                                 grand_sum = sum([float(o.get('total_price', 0.0)) for o in pending_orders])
                                 cust_nm = pending_orders[0].get('customer', 'Customer')
                                 
-                                if st.button(f"✅ One-Tap Approve & Release [{order_ref}]", key="staff_one_tap_btn", use_container_width=True):
+                                if st.button(f"✅ One-Tap Approve & Release Thermal Receipt [{order_ref}]", key="staff_one_tap_btn", use_container_width=True):
                                     receipt_rows_html = ""
                                     saved_items_list = []
                                     
@@ -774,34 +774,166 @@ if view_mode == "STAFF":
                                     st.rerun()
                             else:
                                 st.info("No active pending orders requiring approval.")
+                        else:
+                            st.info("No orders found for this customer thread.")
+            else:
+                st.info("No active chat conversations yet.")
         except Exception as chat_err:
             st.error(f"Chat dashboard error: {chat_err}")
 
     # TAB 4: SAVED RECEIPTS VAULT
     with tabs[4]:
-        st.header("📜 Saved Receipts Vault")
-        df_vault = fetch_dataframe_fresh("saved_receipts")
+        st.header("📜 Saved Receipts Vault (Bank-Style Ledger)")
+        df_vault = fetch_dataframe("saved_receipts")
         if not df_vault.empty:
-            st.dataframe(df_vault, use_container_width=True, hide_index=True)
+            search_vault = st.text_input("🔍 Search by Ref Code or Customer Name/Phone", key="vault_search")
+            if search_vault:
+                df_vault = df_vault[
+                    df_vault['payment_ref'].str.contains(search_vault, case=False, na=False) |
+                    df_vault['customer_name'].str.contains(search_vault, case=False, na=False) |
+                    df_vault['customer_phone'].str.contains(search_vault, case=False, na=False)
+                ]
+            
+            for idx, r_row in df_vault.sort_values('id', ascending=False).iterrows():
+                with st.expander(f"🧾 Ref: [{r_row['payment_ref']}] — {r_row['customer_name']} ({r_row['customer_phone']}) — ₦{float(r_row['grand_total']):,.2f} [{r_row['timestamp']}]"):
+                    col_v1, col_v2 = st.columns([2, 1])
+                    with col_v1:
+                        st.write(f"**Gateway Source:** {r_row['payment_source']}")
+                        st.write(f"**Cashier / Staff:** {r_row['cashier']}")
+                        st.write(f"**Transaction Timestamp:** {r_row['timestamp']}")
+                        try:
+                            items_parsed = json.loads(r_row['items_json'])
+                            items_html_vault = "".join([f"<li>{i.get('name')} ({i.get('qty')} x ₦{i.get('price',0):,.2f}) = ₦{i.get('total',0):,.2f}</li>" for i in items_parsed])
+                            st.markdown(f"<ul>{items_html_vault}</ul>", unsafe_allow_html=True)
+                        except Exception:
+                            st.write(r_row['items_json'])
+                    with col_v2:
+                        st.metric("Total Amount", f"₦{float(r_row['grand_total']):,.2f}")
+        else:
+            st.info("No saved receipts in vault yet.")
 
     # TAB 5: DEBTORS
     with tabs[5]:
         st.header("📓 Debtors Management")
-        df_debtors = fetch_dataframe_fresh("debtors")
+        df_debtors = fetch_dataframe("debtors")
         if not df_debtors.empty:
             st.dataframe(df_debtors, use_container_width=True, hide_index=True)
+        st.divider()
+
+        if not df_debtors.empty:
+            st.subheader("📝 Update or Clear a Debt")
+            col_ed1, col_ed2 = st.columns(2)
+            with col_ed1:
+                selected_id = st.selectbox("Select Debt ID to Update", df_debtors['id'], key="debt_id_sel")
+                debt_to_edit = df_debtors[df_debtors['id'] == selected_id].iloc[0]
+            with col_ed2:
+                edit_action = st.radio("What do you want to do?", ["Update Amount", "Mark as Fully Paid (Delete)"], key="debt_action_radio")
+
+            if edit_action == "Update Amount":
+                with st.form("update_debt_form"):
+                    new_amount = st.number_input("New Balance (₦)", value=float(debt_to_edit['amount']), key="new_debt_balance")
+                    if st.form_submit_button("Update Balance"):
+                        supabase.table("debtors").update({"amount": float(new_amount)}).eq("id", int(selected_id)).execute()
+                        st.success("Balance updated!")
+                        st.rerun()
+            else:
+                if st.button(f"🗑️ Confirm: Clear debt for {debt_to_edit['customer']}", key="clear_debt_btn"):
+                    supabase.table("debtors").delete().eq("id", int(selected_id)).execute()
+                    st.success("Debt cleared!")
+                    st.rerun()
+        
+        st.subheader("➕ Log New Debt")
+        with st.form("debt_form"):
+            debt_c = st.text_input("Customer Name", key="new_debt_cust")
+            debt_p = normalize_phone(st.text_input("Phone", key="new_debt_phone"))
+            debt_i = st.text_area("Evidence (Items Bought)", key="new_debt_items")
+            debt_a = st.number_input("Amount (₦)", 0.0, key="new_debt_amt")
+            if st.form_submit_button("Log New Debt"):
+                if debt_c and debt_a > 0:
+                    debt_payload = {
+                        "customer": debt_c, "amount": float(debt_a), "items_bought": debt_i,
+                        "phone": debt_p, "date": date.today().isoformat(), "timestamp": get_now()
+                    }
+                    supabase.table("debtors").insert(debt_payload).execute()
+                    st.success("New debt logged to cloud.")
+                    st.rerun()
 
     # TAB 6: SETTINGS
     with tabs[6]:
-        st.header("⚙️ Settings")
+        st.header("⚙️ User Settings & Announcements")
+        try:
+            curr_notice_res = supabase.table("app_settings").select("value").eq("key", "active_notice").execute()
+            existing_notice = curr_notice_res.data[0]['value'] if (curr_notice_res.data and len(curr_notice_res.data) > 0) else ""
+        except Exception:
+            existing_notice = ""
+
+        try:
+            curr_video_res = supabase.table("app_settings").select("value").eq("key", "broadcast_video_url").execute()
+            existing_video = curr_video_res.data[0]['value'] if (curr_video_res.data and len(curr_video_res.data) > 0) else ""
+        except Exception:
+            existing_video = ""
+
+        st.write("🎥 **Upload Broadcast Announcement Video (Direct to Cloudinary)**")
+        broadcast_vid_file = st.file_uploader("Choose MP4 Video File for Top Broadcast", type=["mp4", "mov", "webm", "mkv"], key="broadcast_file_uploader")
+
+        with st.form("notice_form"):
+            notice_input = st.text_area("Notice Message (Ticker)", value=existing_notice, key="settings_notice_input")
+            fallback_video_url = st.text_input("OR Direct Video / YouTube URL", value=existing_video, key="settings_video_input")
+            
+            if st.form_submit_button("📢 Publish Notice & Broadcast Video"):
+                uploaded_broadcast_url = upload_video_to_cloudinary(broadcast_vid_file) if broadcast_vid_file is not None else None
+                final_broadcast_link = uploaded_broadcast_url if uploaded_broadcast_url else fallback_video_url.strip()
+
+                chk_notice = supabase.table("app_settings").select("*").eq("key", "active_notice").execute()
+                if chk_notice.data:
+                    supabase.table("app_settings").update({"value": notice_input.strip()}).eq("key", "active_notice").execute()
+                else:
+                    supabase.table("app_settings").insert({"key": "active_notice", "value": notice_input.strip()}).execute()
+
+                chk_video = supabase.table("app_settings").select("*").eq("key", "broadcast_video_url").execute()
+                if chk_video.data:
+                    supabase.table("app_settings").update({"value": final_broadcast_link}).eq("key", "broadcast_video_url").execute()
+                else:
+                    supabase.table("app_settings").insert({"key": "broadcast_video_url", "value": final_broadcast_link}).execute()
+
+                st.success("Notice board and broadcast video updated successfully!")
+                st.rerun()
 
     # TAB 7: EXPENSES
     with tabs[7]:
-        st.header("💸 Expenses")
+        st.header("💸 Expenditure Log")
+        if role == "CEO":
+            df_exp_view = fetch_dataframe("expenses")
+            if not df_exp_view.empty:
+                st.dataframe(df_exp_view, use_container_width=True, hide_index=True)
+            with st.form("expense_entry"):
+                ex_cat = st.selectbox("Category", ["Salaries", "Rent", "Utility", "Stocking", "Fuel", "Other"], key="exp_cat_sel")
+                ex_val = st.number_input("Amount", 0.0, key="exp_val_input")
+                ex_note = st.text_input("Note", key="exp_note_input")
+                if st.form_submit_button("Record Expense"):
+                    supabase.table("expenses").insert({"category": ex_cat, "amount": float(ex_val), "note": ex_note, "date": date.today().isoformat(), "timestamp": get_now()}).execute()
+                    st.rerun()
+        else:
+            st.warning("⚠️ Access restricted to CEO accounts only.")
 
     # TAB 8: WORKERS
     with tabs[8]:
         st.header("👥 Staff Management")
+        if role == "CEO":
+            df_workers = fetch_dataframe("workers")
+            if not df_workers.empty:
+                st.dataframe(df_workers.drop(columns=['password'], errors='ignore'), use_container_width=True, hide_index=True)
+            with st.form("worker_add"):
+                w_n = st.text_input("Worker Name", key="worker_name_input")
+                w_r = st.selectbox("Role", ["Staff", "CEO"], key="worker_role_sel")
+                w_p = st.text_input("Password (Min 6 chars)", type="password", key="worker_pass_input")
+                if st.form_submit_button("Create Account"):
+                    if len(w_p) >= 6:
+                        supabase.table("workers").insert({"name": w_n, "role": w_r, "password": hash_password(w_p)}).execute()
+                        st.success("Worker created!")
+                        st.rerun()
+        else:
+            st.warning("⚠️ Access restricted to CEO accounts only.")
 
 # ==========================================
 # 5. INDEPENDENT CUSTOMER SHOP PORTAL
@@ -814,6 +946,34 @@ else:
         </div>
     """, unsafe_allow_html=True)
 
+    try:
+        notice_res = supabase.table("app_settings").select("value").eq("key", "active_notice").execute()
+        if notice_res.data and len(notice_res.data) > 0 and notice_res.data[0].get('value'):
+            notice_text = notice_res.data[0]['value'].strip()
+            if notice_text:
+                st.markdown(f"""
+                    <div style="background: #1565c0; padding: 14px 20px; border-radius: 10px; color: #ffffff; font-weight: bold; text-align: center; margin-bottom: 15px; font-size: 1.1rem;">
+                        📢 {notice_text}
+                    </div>
+                """, unsafe_allow_html=True)
+    except Exception:
+        pass
+
+    try:
+        vid_res = supabase.table("app_settings").select("value").eq("key", "broadcast_video_url").execute()
+        if vid_res.data and len(vid_res.data) > 0 and vid_res.data[0].get('value'):
+            b_video_url = vid_res.data[0]['value'].strip()
+            if b_video_url and b_video_url.lower() not in ["none", "", "nan"]:
+                st.markdown("""
+                    <div style="background: linear-gradient(135deg, #0d47a1, #1565c0); padding: 8px 12px; border-radius: 8px; color: white; text-align: center; margin-bottom: 10px; font-weight: bold; font-size: 0.95rem;">
+                        📢 FEATURED BROADCAST VIDEO ADVERT & ANNOUNCEMENT
+                    </div>
+                """, unsafe_allow_html=True)
+                st.video(b_video_url)
+                st.markdown("---")
+    except Exception:
+        pass
+
     st.markdown("### 📱 Quick Navigation (Tap below)")
     c_grid1, c_grid2 = st.columns(2)
     with c_grid1:
@@ -823,6 +983,7 @@ else:
         if st.button("💬 Live Chat & Receipt Center", use_container_width=True, key="nav_chat_btn"):
             st.session_state.cust_active_page = "💬 Live Chat & Receipt Center"
             st.rerun()
+
     with c_grid2:
         if st.button("📝 Multi-Item Request", use_container_width=True, key="nav_req_btn"):
             st.session_state.cust_active_page = "📝 Multi-Item Special Request"
@@ -836,6 +997,7 @@ else:
     cart_count = len(st.session_state.cart)
     cart_total = sum([item['total_price'] for item in st.session_state.cart])
 
+    # PAGE 1: SHOP & CART
     if st.session_state.cust_active_page == "🛒 Shop & Cart":
         st.markdown(f"""
             <div style="background: #e3f2fd; padding: 16px; border-radius: 10px; border: 1px solid #90caf9; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; font-size: 1.1rem;">
@@ -848,21 +1010,24 @@ else:
             with st.expander("🛍️ View Cart & Send Order to Live Chat", expanded=True):
                 cart_df = pd.DataFrame(st.session_state.cart)
                 st.dataframe(cart_df[['name', 'unit', 'qty', 'total_price']], use_container_width=True, hide_index=True)
+                st.markdown(f"### Grand Total: ₦{cart_total:,.2f}")
                 
                 with st.form("checkout_cart_form"):
                     c_name_cart = st.text_input("Your Full Name", value=st.session_state.active_cust_name, key="chk_name_input")
                     c_phone_cart = normalize_phone(st.text_input("Your Phone Number", value=st.session_state.active_cust_phone, key="chk_phone_input"))
+                    c_details_cart = st.text_area("📍 Delivery Address & Order Notes", key="chk_address_input")
                     
                     if st.form_submit_button("🚀 Send Order to Live Chat"):
                         if c_name_cart.strip() and c_phone_cart.strip():
                             st.session_state.active_cust_name = c_name_cart.strip()
                             st.session_state.active_cust_phone = c_phone_cart.strip()
+                            checkout_timestamp = get_now()
                             unique_pay_ref = f"SRK-{random.randint(1000, 9999)}"
 
                             items_summary = ", ".join([f"{i['qty']} {i['unit']}(s) of {i['name']}" for i in st.session_state.cart])
                             
                             for item in st.session_state.cart:
-                                supabase.table("orders").insert({
+                                order_payload = {
                                     "customer": c_name_cart.strip(),
                                     "item": f"[Cart Order] {item['name']} ({item['unit']})",
                                     "qty": int(item['qty']),
@@ -871,8 +1036,9 @@ else:
                                     "total_price": float(item['total_price']),
                                     "payment_ref": unique_pay_ref,
                                     "date": date.today().isoformat(),
-                                    "timestamp": get_now()
-                                }).execute()
+                                    "timestamp": checkout_timestamp
+                                }
+                                supabase.table("orders").insert(order_payload).execute()
                             
                             chat_intro = f"Hello! I just submitted an order. Items: {items_summary}. Total: ₦{cart_total:,.2f}. My Reference Code is `{unique_pay_ref}`."
                             supabase.table("messages").insert({
@@ -891,43 +1057,123 @@ else:
         df_shop = fetch_dataframe_cached("products")
 
         if not df_shop.empty:
-            search_query = st.text_input("🔍 Search products...", placeholder="Type product name...", key="shop_search")
+            if 'category' not in df_shop.columns:
+                df_shop['category'] = 'General'
+
+            categories = ["All Categories"] + sorted(df_shop['category'].dropna().unique().tolist())
+            col_filt1, col_filt2 = st.columns([1, 2])
+            with col_filt1:
+                selected_cat = st.selectbox("📂 Category", categories, key="shop_cat_sel")
+            with col_filt2:
+                search_query = st.text_input("🔍 Search products...", placeholder="Type product name...", key="shop_search")
+
+            if selected_cat != "All Categories":
+                df_shop = df_shop[df_shop['category'] == selected_cat]
             if search_query:
                 df_shop = df_shop[df_shop['name'].str.contains(search_query, case=False)]
 
-            for index, s_row in df_shop.iterrows():
-                with st.container():
-                    col_img, col_info, col_order = st.columns([1, 2, 1.5])
-                    with col_img:
-                        img_url = s_row.get('img_data')
-                        if img_url and str(img_url).startswith("http"):
-                            st.image(img_url, width=180)
-                        else:
-                            st.info("No Image")
-                    with col_info:
-                        st.subheader(s_row['name'])
-                        st.caption(f"📂 Category: **{s_row.get('category', 'General')}** | 📍 Shelf: {s_row.get('shelf', 'N/A')}")
-                        st.write(s_row.get('description', ''))
-                    with col_order:
-                        m_lbl = s_row.get('unit_main_label', 'Carton') or 'Carton'
-                        p_lbl = s_row.get('unit_pack_label', 'Pack') or 'Pack'
-                        r_lbl = s_row.get('unit_retail_label', 'Retail Unit') or 'Retail Unit'
+            if not df_shop.empty:
+                st.markdown("---")
+                for index, s_row in df_shop.iterrows():
+                    with st.container():
+                        col_img, col_info, col_order = st.columns([1, 2, 1.5])
+                        with col_img:
+                            img_url = s_row.get('img_data')
+                            if img_url and str(img_url).startswith("http"):
+                                st.image(img_url, width=180)
+                            else:
+                                st.info("No Image")
+                        with col_info:
+                            st.subheader(s_row['name'])
+                            st.caption(f"📂 Category: **{s_row.get('category', 'General')}** | 📍 Shelf: {s_row.get('shelf', 'N/A')}")
+                            st.write(s_row.get('description', ''))
+                            
+                            vid_link = str(s_row.get('video_url', '')).strip()
+                            if vid_link and vid_link.lower() not in ["none", "", "nan"]:
+                                with st.expander("🎥 Watch Video Advert"):
+                                    st.video(vid_link)
+                                    
+                        with col_order:
+                            m_lbl = s_row.get('unit_main_label', 'Carton') or 'Carton'
+                            p_lbl = s_row.get('unit_pack_label', 'Pack') or 'Pack'
+                            r_lbl = s_row.get('unit_retail_label', 'Retail Unit') or 'Retail Unit'
 
-                        unit_choice = st.selectbox("Select Unit", [r_lbl, p_lbl, m_lbl], key=f"unit_{s_row['id']}")
-                        qty_choice = st.number_input("Qty", min_value=1, key=f"qty_{s_row['id']}")
-                        
-                        price = s_row['price_retail'] if unit_choice == r_lbl else (s_row['price_pack'] if unit_choice == p_lbl else s_row['price_carton'])
-                        total_calc = price * qty_choice
-                        
-                        if st.button(f"➕ Add to Cart — ₦{total_calc:,.2f}", key=f"add_cart_{s_row['id']}", use_container_width=True):
-                            st.session_state.cart.append({
-                                "product_id": s_row['id'], "name": s_row['name'], "unit": unit_choice,
-                                "qty": int(qty_choice), "unit_price": float(price), "total_price": float(total_calc)
-                            })
-                            st.success("Added to cart!")
-                            st.rerun()
-                st.divider()
+                            unit_choice = st.selectbox("Select Unit", [r_lbl, p_lbl, m_lbl], key=f"unit_{s_row['id']}")
+                            qty_choice = st.number_input("Qty", min_value=1, key=f"qty_{s_row['id']}")
+                            
+                            price = s_row['price_retail'] if unit_choice == r_lbl else (s_row['price_pack'] if unit_choice == p_lbl else s_row['price_carton'])
+                            total_calc = price * qty_choice
+                            
+                            if st.button(f"➕ Add to Cart — ₦{total_calc:,.2f}", key=f"add_cart_{s_row['id']}", use_container_width=True):
+                                st.session_state.cart.append({
+                                    "product_id": s_row['id'],
+                                    "name": s_row['name'],
+                                    "unit": unit_choice,
+                                    "qty": int(qty_choice),
+                                    "unit_price": float(price),
+                                    "total_price": float(total_calc)
+                                })
+                                st.success(f"Added to cart!")
+                                st.rerun()
+                        st.divider()
+        else:
+            st.warning("No products available in stock yet.")
 
+    # PAGE 2: SPECIAL REQUEST
+    elif st.session_state.cust_active_page == "📝 Multi-Item Special Request":
+        st.subheader("📝 Multi-Item Special Request")
+        cust_n = st.text_input("Your Full Name", value=st.session_state.active_cust_name, key="req_cust_name")
+        cust_p = normalize_phone(st.text_input("Your Phone Number", value=st.session_state.active_cust_phone, key="req_cust_phone"))
+        
+        for idx, entry in enumerate(st.session_state.request_items_temp):
+            c_r1, c_r2 = st.columns([3, 1])
+            with c_r1:
+                entry['item'] = st.text_input(f"Item #{idx+1} Name", value=entry['item'], key=f"req_item_{idx}")
+            with c_r2:
+                entry['qty'] = st.number_input(f"Qty", min_value=1, value=entry['qty'], key=f"req_qty_{idx}")
+        
+        if st.button("➕ Add Item Row", key="add_row_btn"):
+            st.session_state.request_items_temp.append({"item": "", "qty": 1})
+            st.rerun()
+
+        if st.button("🚀 Send Special Request to Live Chat", use_container_width=True, key="submit_req_btn"):
+            if cust_n.strip() and cust_p.strip():
+                batch_timestamp = get_now()
+                unique_pay_ref = f"SRK-{random.randint(1000, 9999)}"
+                
+                req_names = []
+                for e in st.session_state.request_items_temp:
+                    if e['item'].strip():
+                        req_names.append(f"{e['qty']} of {e['item'].strip()}")
+                        supabase.table("orders").insert({
+                            "customer": cust_n.strip(),
+                            "item": f"SPECIAL: {e['item'].strip()}",
+                            "qty": int(e['qty']),
+                            "status": "Order Placed - Pending Staff Quote",
+                            "contact_phone": cust_p.strip(),
+                            "total_price": 0.0,
+                            "payment_ref": unique_pay_ref,
+                            "date": date.today().isoformat(),
+                            "timestamp": batch_timestamp
+                        }).execute()
+                        
+                chat_intro = f"Hello! I submitted a special request for: {', '.join(req_names)}. My Reference Code is `{unique_pay_ref}`."
+                supabase.table("messages").insert({
+                    "sender": "Customer",
+                    "customer_phone": cust_p.strip(),
+                    "customer_name": cust_n.strip(),
+                    "message": chat_intro,
+                    "timestamp": get_now()
+                }).execute()
+
+                st.session_state.active_cust_name = cust_n.strip()
+                st.session_state.active_cust_phone = cust_p.strip()
+                st.session_state.request_items_temp = [{"item": "", "qty": 1}]
+                st.session_state.cust_active_page = "💬 Live Chat & Receipt Center"
+                st.success(f"Special request sent to chat! Reference: {unique_pay_ref}")
+                st.rerun()
+
+    # PAGE 3: LIVE CHAT & RECEIPT CENTER (STABLE & FAST)
     elif st.session_state.cust_active_page == "💬 Live Chat & Receipt Center":
         st.subheader("💬 Live Chat & Payment Receipt Center")
         
@@ -986,11 +1232,12 @@ else:
                         }).execute()
                         
                         if proof_url:
-                            supabase.table("orders").update({"status": "Payment Submitted - Pending Verification"}).eq("contact_phone", c_phone.strip()).execute()
+                            supabase.table("orders").update({"status": "Payment Submitted - Pending Verification"}).eq("contact_phone", c_chat_phone.strip()).execute()
                             
                         st.success("Message sent!")
                         st.rerun()
 
+    # PAGE 4: CUSTOMER SAVED RECEIPTS VAULT
     elif st.session_state.cust_active_page == "📜 My Saved Receipts":
         st.subheader("📜 My Saved Transaction Receipts")
         c_vault_phone = normalize_phone(st.text_input("Enter Your Phone Number to View Receipts", value=st.session_state.active_cust_phone, key="cust_vault_phone"))
