@@ -44,6 +44,7 @@ try:
     )
 except Exception as e:
     st.error(f"Cloudinary configuration missing from environment or secrets! Error: {e}")
+
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
@@ -64,7 +65,8 @@ try:
 except Exception:
     pass
 
-@st.cache_data(ttl=120)
+# HIGH-PERFORMANCE CACHED DATA LAYER
+@st.cache_data(ttl=300, show_spinner=False)
 def fetch_dataframe_cached(table_name):
     try:
         response = supabase.table(table_name).select("*").execute()
@@ -509,11 +511,9 @@ if view_mode == "STAFF":
                 curr_data = selected_row.iloc[0].to_dict()
                 target_id = str(curr_data.get('id', 'new'))
 
-        st.write("📷 **Product Image Upload (Select from Gallery or Files)**")
         chosen_image = st.file_uploader("Upload Product Image", type=["png", "jpg", "jpeg", "webp"], key=f"img_uploader_{target_id}")
 
         st.divider()
-        st.write("🎥 **Product Video File Upload (Hosted on Cloudinary)**")
         vid_file = st.file_uploader("Upload Direct MP4 Video File", type=["mp4", "mov", "webm", "mkv"], key=f"vid_uploader_{target_id}")
 
         form_key_suffix = f"_{target_id}"
@@ -637,20 +637,9 @@ if view_mode == "STAFF":
                     st.success(f"'{delete_target}' has been removed.")
                     st.rerun()
 
-    # TAB 3: LIVE CHAT & ONE-TAP RECEIPT CENTER (SUPABASE REALTIME WEBSOCKET SYNC)
+    # TAB 3: LIVE CHAT & ONE-TAP RECEIPT CENTER
     with tabs[3]:
         st.header("💬 Live Chat & One-Tap Receipt Center")
-        
-        # Real-time WebSocket connection setup via Supabase client
-        if "staff_realtime_initialized" not in st.session_state:
-            try:
-                def handle_staff_change(payload):
-                    st.rerun()
-                
-                supabase.table("messages").on("INSERT", handle_staff_change).subscribe()
-                st.session_state.staff_realtime_initialized = True
-            except Exception:
-                pass
         
         if st.button("🔄 Refresh Messages", key="refresh_staff_chat_btn"):
             st.rerun()
@@ -669,7 +658,7 @@ if view_mode == "STAFF":
                     selected_thread_label = st.selectbox("Select Customer Chat Thread", list(chat_threads.keys()), key="staff_chat_sel")
                     active_phone = chat_threads[selected_thread_label]
                     
-                    st.markdown(f"### 💬 Conversation with **{selected_thread_label}** *(Live WebSocket Sync)*")
+                    st.markdown(f"### 💬 Conversation with **{selected_thread_label}**")
                     
                     thread_msgs = supabase.table("messages").select("*").eq("customer_phone", active_phone).order("id").execute()
                     
@@ -808,7 +797,7 @@ if view_mode == "STAFF":
         except Exception as chat_err:
             st.error(f"Chat dashboard error: {chat_err}")
 
-    # TAB 4: SAVED RECEIPTS VAULT (BANK-STYLE)
+    # TAB 4: SAVED RECEIPTS VAULT
     with tabs[4]:
         st.header("📜 Saved Receipts Vault (Bank-Style Ledger)")
         st.caption("All completed purchase transactions are permanently archived here as individual receipts.")
@@ -905,7 +894,6 @@ if view_mode == "STAFF":
         except Exception:
             existing_video = ""
 
-        st.write("🎥 **Upload Broadcast Announcement Video (Direct to Cloudinary)**")
         broadcast_vid_file = st.file_uploader("Choose MP4 Video File for Top Broadcast", type=["mp4", "mov", "webm", "mkv"], key="broadcast_file_uploader")
 
         with st.form("notice_form"):
@@ -928,6 +916,7 @@ if view_mode == "STAFF":
                 else:
                     supabase.table("app_settings").insert({"key": "broadcast_video_url", "value": final_broadcast_link}).execute()
 
+                st.cache_data.clear()
                 st.success("Notice board and broadcast video updated successfully!")
                 st.rerun()
 
@@ -1205,20 +1194,10 @@ else:
                 st.success(f"Special request sent to chat! Reference: {unique_pay_ref}")
                 st.rerun()
 
-    # PAGE 3: LIVE CHAT & RECEIPT CENTER (SUPABASE REALTIME WEBSOCKET SYNC)
+    # PAGE 3: LIVE CHAT & RECEIPT CENTER
     elif st.session_state.cust_active_page == "💬 Live Chat & Receipt Center":
         st.subheader("💬 Live Chat & Payment Receipt Center")
         
-        if "cust_realtime_initialized" not in st.session_state:
-            try:
-                def handle_cust_change(payload):
-                    st.rerun()
-                
-                supabase.table("messages").on("INSERT", handle_cust_change).subscribe()
-                st.session_state.cust_realtime_initialized = True
-            except Exception:
-                pass
-
         if st.button("🔄 Refresh Messages", key="refresh_cust_chat_btn"):
             st.rerun()
         
@@ -1230,7 +1209,7 @@ else:
             st.session_state.active_cust_phone = c_chat_phone.strip()
             
             st.divider()
-            st.markdown("### 💬 Chat Conversation *(Live WebSocket Sync)*")
+            st.markdown("### 💬 Chat Conversation")
             
             chat_res = supabase.table("messages").select("*").eq("customer_phone", c_chat_phone.strip()).order("id").execute()
             
@@ -1253,7 +1232,6 @@ else:
             
             with st.form("customer_chat_form", clear_on_submit=True):
                 cust_input_msg = st.text_input("Type message / reply here...", key="cust_chat_input")
-                
                 cust_proof_file = st.file_uploader("Upload Payment Receipt Screenshot", type=["png", "jpg", "jpeg", "webp"], key="cust_chat_proof")
                 
                 if st.form_submit_button("📤 Send Message / Upload Payment Proof"):
