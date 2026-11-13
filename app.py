@@ -303,7 +303,7 @@ if view_mode == "STAFF":
         c4.metric("Net Cashflow", f"₦{(total_prof - total_exp):,.2f}")
         st.divider()
         if not df_s.empty:
-            st.dataframe(df_s.sort_values('timestamp', ascending=False), use_container_width=True, hide_index=True)
+            st.dataframe(df_s.sort_values('timestamp', ascending=False), width="stretch", hide_index=True)
 
     # TAB 1: POS & SALES
     with tabs[1]:
@@ -332,7 +332,7 @@ if view_mode == "STAFF":
                 
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
-                    if st.button("🏁 Cash Sale & Delivery Receipt", use_container_width=True, key="pos_cash_btn"):
+                    if st.button("🏁 Cash Sale & Delivery Receipt", width="stretch", key="pos_cash_btn"):
                         packs_per_c = p.get('packs_per_carton', 1) or 1
                         units_per_p = p.get('units_per_pack', 1) or 1
                         
@@ -389,7 +389,7 @@ if view_mode == "STAFF":
                         st.rerun()
                 
                 with col_btn2:
-                    if st.button("📓 Record Debt", use_container_width=True, key="pos_debt_btn"):
+                    if st.button("📓 Record Debt", width="stretch", key="pos_debt_btn"):
                         if not c_name_pos:
                             st.error("Customer name required for Debt Evidence!")
                         else:
@@ -489,7 +489,7 @@ if view_mode == "STAFF":
         df_inv = fetch_dataframe_cached("products")
         
         if not df_inv.empty:
-            st.dataframe(df_inv.drop(columns=['img_data'], errors='ignore'), use_container_width=True, hide_index=True)
+            st.dataframe(df_inv.drop(columns=['img_data'], errors='ignore'), width="stretch", hide_index=True)
         st.divider()
         
         st.subheader("📝 Add / Update Item")
@@ -708,7 +708,7 @@ if view_mode == "STAFF":
                                 grand_sum = sum([float(o.get('total_price', 0.0)) for o in pending_orders])
                                 cust_nm = pending_orders[0].get('customer', 'Customer')
                                 
-                                if st.button(f"✅ One-Tap Approve & Release Thermal Receipt [{order_ref}]", key="staff_one_tap_btn", use_container_width=True):
+                                if st.button(f"✅ One-Tap Approve & Release Thermal Receipt [{order_ref}]", key="staff_one_tap_btn", width="stretch"):
                                     receipt_rows_html = ""
                                     saved_items_list = []
                                     
@@ -836,7 +836,7 @@ if view_mode == "STAFF":
         st.header("📓 Debtors Management")
         df_debtors = fetch_dataframe("debtors")
         if not df_debtors.empty:
-            st.dataframe(df_debtors, use_container_width=True, hide_index=True)
+            st.dataframe(df_debtors, width="stretch", hide_index=True)
         st.divider()
 
         if not df_debtors.empty:
@@ -926,7 +926,7 @@ if view_mode == "STAFF":
         if role == "CEO":
             df_exp_view = fetch_dataframe("expenses")
             if not df_exp_view.empty:
-                st.dataframe(df_exp_view, use_container_width=True, hide_index=True)
+                st.dataframe(df_exp_view, width="stretch", hide_index=True)
             with st.form("expense_entry"):
                 ex_cat = st.selectbox("Category", ["Salaries", "Rent", "Utility", "Stocking", "Fuel", "Other"], key="exp_cat_sel")
                 ex_val = st.number_input("Amount", 0.0, key="exp_val_input")
@@ -943,7 +943,7 @@ if view_mode == "STAFF":
         if role == "CEO":
             df_workers = fetch_dataframe("workers")
             if not df_workers.empty:
-                st.dataframe(df_workers.drop(columns=['password'], errors='ignore'), use_container_width=True, hide_index=True)
+                st.dataframe(df_workers.drop(columns=['password'], errors='ignore'), width="stretch", hide_index=True)
             with st.form("worker_add"):
                 w_n = st.text_input("Worker Name", key="worker_name_input")
                 w_r = st.selectbox("Role", ["Staff", "CEO"], key="worker_role_sel")
@@ -998,18 +998,18 @@ else:
     st.markdown("### 📱 Quick Navigation (Tap below)")
     c_grid1, c_grid2 = st.columns(2)
     with c_grid1:
-        if st.button("🛒 Shop Products & Cart", use_container_width=True, key="nav_shop_btn"):
+        if st.button("🛒 Shop Products & Cart", width="stretch", key="nav_shop_btn"):
             st.session_state.cust_active_page = "🛒 Shop & Cart"
             st.rerun()
-        if st.button("💬 Live Chat & Receipt Center", use_container_width=True, key="nav_chat_btn"):
+        if st.button("💬 Live Chat & Receipt Center", width="stretch", key="nav_chat_btn"):
             st.session_state.cust_active_page = "💬 Live Chat & Receipt Center"
             st.rerun()
 
     with c_grid2:
-        if st.button("📝 Multi-Item Request", use_container_width=True, key="nav_req_btn"):
+        if st.button("📝 Multi-Item Request", width="stretch", key="nav_req_btn"):
             st.session_state.cust_active_page = "📝 Multi-Item Special Request"
             st.rerun()
-        if st.button("📜 My Saved Receipts Vault", use_container_width=True, key="nav_vault_btn"):
+        if st.button("📜 My Saved Receipts Vault", width="stretch", key="nav_vault_btn"):
             st.session_state.cust_active_page = "📜 My Saved Receipts"
             st.rerun()
 
@@ -1030,7 +1030,7 @@ else:
         if cart_count > 0:
             with st.expander("🛍️ View Cart & Send Order to Live Chat", expanded=True):
                 cart_df = pd.DataFrame(st.session_state.cart)
-                st.dataframe(cart_df[['name', 'unit', 'qty', 'total_price']], use_container_width=True, hide_index=True)
+                st.dataframe(cart_df[['name', 'unit', 'qty', 'total_price']], width="stretch", hide_index=True)
                 st.markdown(f"### Grand Total: ₦{cart_total:,.2f}")
                 
                 with st.form("checkout_cart_form"):
@@ -1125,7 +1125,7 @@ else:
                             price = s_row['price_retail'] if unit_choice == r_lbl else (s_row['price_pack'] if unit_choice == p_lbl else s_row['price_carton'])
                             total_calc = price * qty_choice
                             
-                            if st.button(f"➕ Add to Cart — ₦{total_calc:,.2f}", key=f"add_cart_{s_row['id']}", use_container_width=True):
+                            if st.button(f"➕ Add to Cart — ₦{total_calc:,.2f}", key=f"add_cart_{s_row['id']}", width="stretch"):
                                 st.session_state.cart.append({
                                     "product_id": s_row['id'],
                                     "name": s_row['name'],
@@ -1157,7 +1157,7 @@ else:
             st.session_state.request_items_temp.append({"item": "", "qty": 1})
             st.rerun()
 
-        if st.button("🚀 Send Special Request to Live Chat", use_container_width=True, key="submit_req_btn"):
+        if st.button("🚀 Send Special Request to Live Chat", width="stretch", key="submit_req_btn"):
             if cust_n.strip() and cust_p.strip():
                 batch_timestamp = get_now()
                 unique_pay_ref = f"SRK-{random.randint(1000, 9999)}"
